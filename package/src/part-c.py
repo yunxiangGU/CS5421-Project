@@ -1,6 +1,5 @@
 import pymongo
 import re
-from collections import deque
 from pprint import pprint
 
 
@@ -89,7 +88,6 @@ class XPathParser():
     def queryHelperR(self, filters, projections, searchPath, acc):
         if searchPath == "":
             accPath = ".".join(acc)
-            print(accPath)
             if accPath != "": 
                 projections[accPath] = 1
             return
@@ -101,12 +99,15 @@ class XPathParser():
             acc.append(name)
             self.queryHelperR(filters, projections, tail, acc)
         elif axis == "descendant":
-            ommittedPath = self.findPath(self.rootInSchema(acc), name)
-            if ommittedPath == []:
+            ommittedPaths = []
+            self.findPaths(self.rootInSchema(acc), name, -1, [], ommittedPaths)
+            if ommittedPaths == []:
                 print("XPath from %s to %s is not shared by all objects." % (acc[-1], name))
             else:
-                acc.extend(ommittedPath)
-            self.queryHelperR(filters, projections, tail, acc)
+                for path in ommittedPaths:
+                    extendedPath = acc.copy()
+                    extendedPath.extend(path)
+                    self.queryHelperR(filters, projections, tail, extendedPath)
 
     
     # ------------------------------helper functions-------------------------------------
@@ -170,43 +171,33 @@ class XPathParser():
         return sample
 
 
-    # find a path to "name" starting from "root" (exclusive)
-    def findPath(self, root, name):
-        path = []    # bfs
-        if root == None:
-            return path
+    # find a path to "name" starting from "root" (exclusive), picking the first "num" paths
+    # if num == -1, return all the paths, otherwise return [paths[num - 1]]
+    def findPaths(self, root, name, num, acc, paths):
+        if root == None or num == 0:
+            return
 
-        queue = deque()
-        queue.append((root, []))
-        while queue:
-            root, acc = queue.popleft()
-            if type(root) is dict:
-                matched = False
-                for key in root.keys():
-                    acc.append(key)
-                    if key == name:
-                        path = acc
-                        matched = True
-                        break
-                    else:
-                        queue.append((root[key], acc.copy()))
-                        acc.pop(-1)
-                if matched:
-                    break
-            elif type(root) is list:
-                queue.append((root[0], acc))
-
-        return path
-
+        if type(root) is dict:
+            for key in root.keys():
+                acc.append(key)
+                if key == name:
+                    if num > 0:
+                        num -= 1
+                    if num <= 0:
+                        paths.append(acc.copy())    # only append once when num == 0, always append when num < 0
+                self.findPaths(root[key], name, num, acc.copy(), paths)
+                acc.pop(-1)
 
 
 if __name__ == "__main__":
     testHandler = XPathParser("mongodb://localhost:27017/", "test")
 
-    testXPath = "/child::library/child::artists/child::artist/child::country"
+    testXPath = "/child::library/descendant::title"    # wrong collection name
     testXPath2 = "/child::library/descendant::artist/child::country"
     testXPath3 = "/child::library/descendant::country"
     testXPath4 = "/child::library/child::artists/descendant::country"
+    for result in testHandler.query(testXPath):
+        pprint(result)
     for result in testHandler.query(testXPath2):
         pprint(result)
     for result in testHandler.query(testXPath3):
