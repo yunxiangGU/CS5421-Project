@@ -1,14 +1,17 @@
 import pymongo
 import re
+from collections import deque
 from pprint import pprint
 
 
 
-class XMLParser():
+class XPathParser():
 
     def __init__(self, uri, dbname):
         self.client = pymongo.MongoClient(uri)
         self.db = self.client[dbname]
+        self.collection = ""
+        self.schema = None
 
 
     # function to switch a database
@@ -16,11 +19,27 @@ class XMLParser():
         self.db = self.client[dbname]
 
 
+    # update schema of a collection as a dictionary
+    def updateSchema(self, collection):
+        sample = self.db[collection].find_one(projection={"_id" : 0})
+        if sample == None:
+            return {"success" : 0, "message" : "Collection %s is not in Database %s or is an empty collection."\
+                 % (collection, self.db.name)}
+        else:
+            self.schema = self.buildSchema(sample)
+            self.collection = collection
+            return {"success" : 1, "message" : self.schema}
+
+
     # query entry
     # @params: s: input xpath as a String
     # @returns: query result from mongo
     def query(self, s, withID=True):
-        searchContext = self.generateSearch(s)
+        result = self.generateSearch(s)
+        if result["success"] == 0:
+            return [result["message"]]
+
+        searchContext = result["message"]
         if not withID:
             searchContext["projections"]["_id"] = 0
 
@@ -30,7 +49,7 @@ class XMLParser():
             print("please implement logics for aggregation.")
         # case 2: xpath without aggregate functions
         else:
-            # only considers "child" axes for now
+            # only considers "child" and "descendant" axes for now
             result = self.db[searchContext["collection"]].find(\
                 filter=searchContext["filters"], 
                 projection=searchContext["projections"])
@@ -46,6 +65,11 @@ class XMLParser():
     #           "projections" : }
     def generateSearch(self, s):
         splittedPath = self.splitXPath(s)
+        if splittedPath["collection"] != self.collection:
+            result = self.updateSchema(splittedPath["collection"])
+            if result["success"] == 0:
+                return result
+
         searchContext = {"aggregate" : splittedPath["aggregate"],
                         "collection" : splittedPath["collection"],
                         "filters" : {},
@@ -54,7 +78,7 @@ class XMLParser():
                         searchContext["projections"], 
                         splittedPath["searchPath"], [])
 
-        return searchContext
+        return {"success" : 1, "message" : searchContext}
 
 
     # recursively build up the search body
@@ -76,9 +100,32 @@ class XMLParser():
         if axis == "child":
             acc.append(name)
             self.queryHelperR(filters, projections, tail, acc)
+        elif axis == "descendant":
+            ommittedPath = self.findPath(self.rootInSchema(acc), name)
+            if ommittedPath == []:
+                print("XPath from %s to %s is not shared by all objects." % (acc[-1], name))
+            else:
+                acc.extend(ommittedPath)
+            self.queryHelperR(filters, projections, tail, acc)
 
     
     # ------------------------------helper functions-------------------------------------
+
+    # build schema from "root" (dfs)
+    def buildSchema(self, root):
+        if root == None:
+            return None
+
+        if type(root) is dict:
+            partialSchema = {}
+            for k in root:
+                partialSchema[k] = self.buildSchema(root[k])
+            return partialSchema
+        elif type(root) is list:
+            return self.buildSchema(root[0])
+        else:
+            return type(root)
+
 
     # split a query into three parts: aggregate function, collection name and search path
     def splitXPath(self, s):
@@ -113,9 +160,58 @@ class XMLParser():
         return splitResult
 
 
+    # find the root element in a sample document down the "path"
+    def rootInSchema(self, path):
+        sample = self.schema
+        for p in path:
+            if sample == None:
+                break
+            sample = sample[p]
+        return sample
+
+
+    # find a path to "name" starting from "root" (exclusive)
+    def findPath(self, root, name):
+        path = []    # bfs
+        if root == None:
+            return path
+
+        queue = deque()
+        queue.append((root, []))
+        while queue:
+            root, acc = queue.popleft()
+            if type(root) is dict:
+                matched = False
+                for key in root.keys():
+                    acc.append(key)
+                    if key == name:
+                        path = acc
+                        matched = True
+                        break
+                    else:
+                        queue.append((root[key], acc.copy()))
+                        acc.pop(-1)
+                if matched:
+                    break
+            elif type(root) is list:
+                queue.append((root[0], acc))
+
+        return path
+
+
 
 if __name__ == "__main__":
-    testHandler = XMLParser("mongodb://localhost:27017/", "test")
+    testHandler = XPathParser("mongodb://localhost:27017/", "test")
+
     testXPath = "/child::library/child::artists/child::artist/child::country"
-    for result in testHandler.query(testXPath, withID=True):
+    testXPath2 = "/child::library/descendant::artist/child::country"
+    testXPath3 = "/child::library/descendant::country"
+    testXPath4 = "/child::library/child::artists/descendant::country"
+    for result in testHandler.query(testXPath2):
         pprint(result)
+    for result in testHandler.query(testXPath3):
+        pprint(result)
+    for result in testHandler.query(testXPath4):
+        pprint(result)
+
+    print(testHandler.updateSchema("store"))
