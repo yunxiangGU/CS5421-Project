@@ -32,28 +32,29 @@ class XPathParser():
 
     # query entry
     # @params: s: input xpath as a String
-    # @returns: query result from mongo
+    # @returns: query result from mongo / error message
     def query(self, s, withID=True):
-        result = self.generateSearch(s)
-        if result["success"] == 0:
-            return [result["message"]]
+        generationResult = self.generateSearch(s)
+        # return error message
+        if generationResult["success"] == 0:
+            return [generationResult]
 
-        searchContext = result["message"]
+        searchContext = generationResult["message"]
         if not withID:
             searchContext["projections"]["_id"] = 0
 
-        result = None
+        queryResult = None
         # TODO: case 1: xpath without aggregate functions
         if searchContext["aggregate"] != "":
             print("please implement logics for aggregation.")
         # case 2: xpath without aggregate functions
         else:
             # only considers "child" and "descendant" axes for now
-            result = self.db[searchContext["collection"]].find(\
+            queryResult = self.db[searchContext["collection"]].find(\
                 filter=searchContext["filters"], 
                 projection=searchContext["projections"])
         
-        return result
+        return queryResult
 
 
     # generate a dictionary of the xpath equivalent
@@ -61,7 +62,7 @@ class XPathParser():
     # @returns: {"aggregate" : aggregate function, 
     #           "collection" : collection name, 
     #           "filters" : predicates,
-    #           "projections" : }
+    #           "projections" : } or error message
     def generateSearch(self, s):
         splittedPath = self.splitXPath(s)
         if splittedPath["collection"] != self.collection:
@@ -73,41 +74,64 @@ class XPathParser():
                         "collection" : splittedPath["collection"],
                         "filters" : {},
                         "projections" : {}}
-        self.queryHelperR(searchContext["filters"], 
+        result = self.queryHelperR(searchContext["filters"], 
                         searchContext["projections"], 
-                        splittedPath["searchPath"], [])
+                        splittedPath["searchPath"], [], self.schema)
 
-        return {"success" : 1, "message" : searchContext}
+        print(searchContext)
+
+        return {"success" : 1, "message" : searchContext} if result["success"] == 1 else result
 
 
     # recursively build up the search body
     # @params: filters: conditions generated from predicates; 
     #           projections: specified fields generated from paths;
     #           searchPath: partial path that has not been processed;
-    #           acc: all the ancestors processed
-    def queryHelperR(self, filters, projections, searchPath, acc):
+    #           acc: all the ancestors processed;
+    #           currentNode: current node in the schema
+    def queryHelperR(self, filters, projections, searchPath, acc, currentNode):
         if searchPath == "":
             accPath = ".".join(acc)
             if accPath != "": 
                 projections[accPath] = 1
-            return
+            return {"success" : 1}
 
         # TODO: add support for predicates and other axes
         head, tail = searchPath.split("/", 1)
         axis, name = head.split("::")
+        # case 1: "child" axes
         if axis == "child":
-            acc.append(name)
-            self.queryHelperR(filters, projections, tail, acc)
-        elif axis == "descendant":
-            ommittedPaths = []
-            self.findPaths(self.rootInSchema(acc), name, -1, [], ommittedPaths)
-            if ommittedPaths == []:
-                print("XPath from %s to %s is not shared by all objects." % (acc[-1], name))
+            if currentNode.get(name) != None:
+                acc.append(name)
+                return self.queryHelperR(filters, projections, tail, acc, currentNode[name])
             else:
+                return {"success" : 0, "message" : "Cannot find complete path %s" \
+                    % (" -> ".join(acc) + " -> " + name)}
+        # case 2: "descendant" and "descendant-or-self" axes
+        elif re.compile("descendant.*").match(axis) != None:
+            ommittedPaths = []
+            self.findPaths(self.nodeInSchema(acc), name, -1, [], ommittedPaths)
+            # case 2.1: cannot find any path from current node to node "name"
+            if ommittedPaths == []:
+                # matching "self" at current node
+                if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
+                    return self.queryHelperR(filters, projections, tail, acc, currentNode)
+                else:
+                    return {"success" : 0, "message" : "Cannot find indirect path %s ->> %s" \
+                        % (acc[-1] if acc != [] else "(root node)", name)}
+            # case 2.2: find some paths from current node to "name"
+            else:
+                if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
+                    self.queryHelperR(filters, projections, tail, acc, currentNode)
                 for path in ommittedPaths:
+                    # raw use of "node()" is not well supported because of position collision in pymongo
+                    # "node()" here is specially adjusted for translation from "//" (abbreviated)
+                    if name == "node()" and tail != "":
+                        path.pop(-1)
                     extendedPath = acc.copy()
                     extendedPath.extend(path)
-                    self.queryHelperR(filters, projections, tail, extendedPath)
+                    self.queryHelperR(filters, projections, tail, extendedPath, self.nodeInSchema(extendedPath))
+                return {"success" : 1}    # can tolerate node search mismatches in this case
 
     
     # ------------------------------helper functions-------------------------------------
@@ -162,7 +186,7 @@ class XPathParser():
 
 
     # find the root element in a sample document down the "path"
-    def rootInSchema(self, path):
+    def nodeInSchema(self, path):
         sample = self.schema
         for p in path:
             if sample == None:
@@ -172,7 +196,7 @@ class XPathParser():
 
 
     # find a path to "name" starting from "root" (exclusive), picking the first "num" paths
-    # if num == -1, return all the paths, otherwise return [paths[num - 1]]
+    # if num == -1, record all the paths in "paths", otherwise record the "num"th path only.
     def findPaths(self, root, name, num, acc, paths):
         if root == None or num == 0:
             return
@@ -180,7 +204,7 @@ class XPathParser():
         if type(root) is dict:
             for key in root.keys():
                 acc.append(key)
-                if key == name:
+                if key == name or name == "node()":
                     if num > 0:
                         num -= 1
                     if num <= 0:
@@ -192,17 +216,21 @@ class XPathParser():
 if __name__ == "__main__":
     testHandler = XPathParser("mongodb://localhost:27017/", "test")
 
-    testXPath = "/child::library/descendant::title"    # wrong collection name
-    testXPath2 = "/child::library/descendant::artist/child::country"
-    testXPath3 = "/child::library/descendant::country"
-    testXPath4 = "/child::library/child::artists/descendant::country"
-    for result in testHandler.query(testXPath):
+    testXPath1 = "/child::library/child::title/descendant-or-self::title"
+    testXPath2 = "/child::library/descendant-or-self::node()/child::title"
+    testXPath3 = "/child::library/descendant::artist/child::country"
+    testXPath4 = "/child::library/descendant::country"
+    testXPath5 = "/child::library/child::artists/descendant::country"
+    
+    for result in testHandler.query(testXPath1):
         pprint(result)
     for result in testHandler.query(testXPath2):
         pprint(result)
-    for result in testHandler.query(testXPath3):
-        pprint(result)
-    for result in testHandler.query(testXPath4):
-        pprint(result)
+    # for result in testHandler.query(testXPath3):
+    #     pprint(result)
+    # for result in testHandler.query(testXPath4):
+    #     pprint(result)
+    # for result in testHandler.query(testXPath5):
+    #     pprint(result)
 
-    print(testHandler.updateSchema("store"))
+    # print(testHandler.updateSchema("store"))    # wrong collection name
