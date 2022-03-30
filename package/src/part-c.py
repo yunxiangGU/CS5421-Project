@@ -119,18 +119,19 @@ class XPathParser:
             completePath = completePath.replace("child::", "")
             completePath = completePath.replace("/", ".")
 
-            if "=" in completePath:
-                operator = "="
-            elif ">" in completePath:
-                operator = ">"
-            elif "<" in completePath:
-                operator = "<"
-            elif ">=" in completePath:
+
+            if ">=" in completePath:
                 operator = ">="
             elif "<=" in completePath:
                 operator = "<="
             elif "!=" in completePath:
                 operator = "!="
+            elif ">" in completePath:
+                operator = ">"
+            elif "<" in completePath:
+                operator = "<"
+            elif "=" in completePath:
+                operator = "="
             else:
                 operator = ""
 
@@ -139,7 +140,19 @@ class XPathParser:
                 predicateValue = completePath.split(operator)[1]
                 if '\'' in predicateValue or '\"' in predicateValue:
                     predicateValue = predicateValue[1 : -1]
-                filters[predicateKey] = predicateValue
+                print("***operator: ", operator)
+                if operator == ">=":
+                    filters[predicateKey] = {'$gte': predicateValue}
+                elif operator == "<=":
+                    filters[predicateKey] = {'$lte': predicateValue}
+                elif operator == "!=":
+                    filters[predicateKey] = {'$ne': predicateValue}
+                elif operator == ">":
+                    filters[predicateKey] = {'$gt': predicateValue}
+                elif operator == "<":
+                    filters[predicateKey] = {'$lt': predicateValue}
+                elif operator == "=":
+                    filters[predicateKey] = predicateValue
 
         # case 1: "child" axes
         if axis == "child":
@@ -257,25 +270,25 @@ if __name__ == "__main__":
     testXPath3 = "/child::library/descendant::artist/child::country"
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
-    testXPath6 = "/child::library/child::artists[child::artist/child::name=\"Wham!\"]"
+    testXPath6 = "/child::library/child::artists[child::artist/child::name>\"Wham!\"]"
 
-    for result in testHandler.query(testXPath1):
-        pprint(result)
-    print()
-    for result in testHandler.query(testXPath2):
-        pprint(result)
-    print()
-    for result in testHandler.query(testXPath3):
-        pprint(result)
-    print()
-    for result in testHandler.query(testXPath4):
-        pprint(result)
-    print()
-    for result in testHandler.query(testXPath5):
-        pprint(result)
-    print()
+    # for result in testHandler.query(testXPath1):
+    #     pprint(result)
+    # print()
+    # for result in testHandler.query(testXPath2):
+    #     pprint(result)
+    # print()
+    # for result in testHandler.query(testXPath3):
+    #     pprint(result)
+    # print()
+    # for result in testHandler.query(testXPath4):
+    #     pprint(result)
+    # print()
+    # for result in testHandler.query(testXPath5):
+    #     pprint(result)
+    # print()
     for result in testHandler.query(testXPath6):
         pprint(result)
     print()
 
-    print(testHandler.updateSchema("store"))    # wrong collection name
+    # print(testHandler.updateSchema("store"))    # wrong collection name
