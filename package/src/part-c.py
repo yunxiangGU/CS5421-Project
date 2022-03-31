@@ -51,8 +51,8 @@ class XPathParser():
         else:
             # only considers "child" and "descendant" axes for now
             queryResult = self.db[searchContext["collection"]].find(\
-                filter=searchContext["filters"], 
-                projection=searchContext["projections"])
+                filter=searchContext.get("filters"), 
+                projection=searchContext.get("projections"))
         
         return queryResult
 
@@ -71,30 +71,27 @@ class XPathParser():
                 return result
 
         searchContext = {"aggregate" : splittedPath["aggregate"],
-                        "collection" : splittedPath["collection"],
-                        "filters" : {},
-                        "projections" : {}}
-        result = self.queryHelperR(searchContext["filters"], 
-                        searchContext["projections"], 
-                        splittedPath["searchPath"], [], self.schema)
+                        "collection" : splittedPath["collection"]}
+        result = self.queryHelper(splittedPath["searchPath"], [], self.schema)
+        if result["success"] == 0:
+            return result
+        else:
+            for field, content in result["message"].items():
+                searchContext[field] = content
+            print(searchContext)
+            return {"success" : 1, "message" : searchContext}
 
-        print(searchContext)
-
-        return {"success" : 1, "message" : searchContext} if result["success"] == 1 else result
-
-
+    
     # recursively build up the search body
-    # @params: filters: conditions generated from predicates; 
-    #           projections: specified fields generated from paths;
-    #           searchPath: partial path that has not been processed;
+    # @params: searchPath: partial path that has not been processed;
     #           acc: all the ancestors processed;
     #           currentNode: current node in the schema
-    def queryHelperR(self, filters, projections, searchPath, acc, currentNode):
+    # @returns: success message with filter, projection, ... or error message
+    def queryHelper(self, searchPath, acc, currentNode):
         if searchPath == "":
             accPath = ".".join(acc)
             if accPath != "": 
-                projections[accPath] = 1
-            return {"success" : 1}
+                return {"success" : 1, "message" : {"projections" : {accPath : 1}}}
 
         # TODO: add support for predicates and other axes
         head, tail = searchPath.split("/", 1)
@@ -103,35 +100,43 @@ class XPathParser():
         if axis == "child":
             if currentNode.get(name) != None:
                 acc.append(name)
-                return self.queryHelperR(filters, projections, tail, acc, currentNode[name])
+                return self.queryHelper(tail, acc, currentNode[name])
             else:
                 return {"success" : 0, "message" : "Cannot find complete path %s" \
                     % (" -> ".join(acc) + " -> " + name)}
         # case 2: "descendant" and "descendant-or-self" axes
         elif re.compile("descendant.*").match(axis) != None:
-            ommittedPaths = []
-            self.findPaths(self.nodeInSchema(acc), name, -1, [], ommittedPaths)
-            # case 2.1: cannot find any path from current node to node "name"
-            if ommittedPaths == []:
-                # matching "self" at current node
-                if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
-                    return self.queryHelperR(filters, projections, tail, acc, currentNode)
-                else:
-                    return {"success" : 0, "message" : "Cannot find indirect path %s ->> %s" \
-                        % (acc[-1] if acc != [] else "(root node)", name)}
-            # case 2.2: find some paths from current node to "name"
-            else:
-                if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
-                    self.queryHelperR(filters, projections, tail, acc, currentNode)
-                for path in ommittedPaths:
-                    # raw use of "node()" is not well supported because of position collision in pymongo
-                    # "node()" here is specially adjusted for translation from "//" (abbreviated)
-                    if name == "node()" and tail != "":
-                        path.pop(-1)
-                    extendedPath = acc.copy()
-                    extendedPath.extend(path)
-                    self.queryHelperR(filters, projections, tail, extendedPath, self.nodeInSchema(extendedPath))
-                return {"success" : 1}    # can tolerate node search mismatches in this case
+            omittedPaths = []
+            self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
+
+            # default return value with no matching result
+            integratedResult = {"success" : 0, "message" : "Cannot find indirect path %s ->> %s" \
+                % (acc[-1] if acc != [] else "(root node)", name)}
+
+            # case 1: special case for "descendant-or-self"
+            if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
+                possibleResult = self.queryHelper(tail, acc, currentNode)
+                if possibleResult["success"] == 1:
+                    integratedResult = possibleResult
+            # case 2: find some paths from current node to "name"
+            for path in omittedPaths:
+                # raw use of "node()" is not well supported because of position collision in pymongo
+                # "node()" here is specially adjusted for translation from "//" (abbreviated)
+                if name == "node()" and tail != "":
+                    path.pop(-1)
+                extendedPath = acc.copy()
+                extendedPath.extend(path)
+                branchResult = self.queryHelper(tail, extendedPath, self.nodeInSchema(extendedPath))
+                if integratedResult["success"] == 0:
+                    integratedResult = branchResult
+                elif branchResult["success"] == 1:
+                    for field, content in branchResult["message"].items():
+                        if not integratedResult["message"].get(field):
+                            integratedResult[field] = {}
+                        for key, val in content.items():
+                            integratedResult["message"][field][key] = val
+
+            return integratedResult
 
     
     # ------------------------------helper functions-------------------------------------
@@ -222,15 +227,15 @@ if __name__ == "__main__":
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
     
-    for result in testHandler.query(testXPath1):
+    # for result in testHandler.query(testXPath1):
+    #     pprint(result)
+    # for result in testHandler.query(testXPath2):
+    #     pprint(result)
+    for result in testHandler.query(testXPath3):
         pprint(result)
-    for result in testHandler.query(testXPath2):
+    for result in testHandler.query(testXPath4):
         pprint(result)
-    # for result in testHandler.query(testXPath3):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath4):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath5):
-    #     pprint(result)
+    for result in testHandler.query(testXPath5):
+        pprint(result)
 
     # print(testHandler.updateSchema("store"))    # wrong collection name
