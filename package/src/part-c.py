@@ -44,7 +44,13 @@ class XPathParser:
         queryResult = None
         # TODO: case 1: xpath with aggregate functions
         if searchContext["aggregate"] != "":
-            print("please implement logics for aggregation.")
+            if searchContext["aggregate"] == "count":
+                queryResult = self.db[searchContext["collection"]].count_documents(filter=searchContext.get("filters"))
+            else:
+                projection_value = list(searchContext.get("projections").keys())[0]
+                filter_pipe = {"$match":searchContext.get("filters")}
+                pipe = {'$group': {'_id': None, 'result': {'$'+searchContext["aggregate"]: '$'+projection_value}}}
+                queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe])
         # case 2: xpath without aggregate functions
         else:
             # only considers "child" and "descendant" axes for now
