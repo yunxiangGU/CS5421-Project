@@ -30,6 +30,8 @@ class XPathParser:
     # @params: s: input xpath as a String
     # @returns: query result from mongo / error message
     def query(self, s, withID=True):
+        if not self.check_is_full_syntax(s):
+            s = self.translate_to_full_syntax(s)
         generationResult = self.generateSearch(s)
         # return error message
         if generationResult["success"] == 0:
@@ -320,6 +322,71 @@ class XPathParser:
                 for key, val in content.items():
                     integratedResult["message"][field][key] = val
         return integratedResult
+    
+    def check_is_full_syntax(self, query):
+        if query.find("::") < 0:
+            return False
+        else:
+            return True
+        
+    def check_in_keyword_set(self, query, start):
+        result = False
+        keyword_list = ["count", "sum", "max", "min", "avg", "contains", "starts-with", "doc"]
+        keyword_set = set(keyword_list)
+        keyword_len_set = set(list(map(len, keyword_list)))
+        for l in keyword_len_set:
+            result = result or (query[start:start+l] in keyword_set and not query[start+l].isalpha())
+        return result
+
+    def translate_to_full_syntax(self, query):
+        result = ""
+        start= 0
+
+        if query[start].isalpha() and self.check_in_keyword_set(query, start):
+            result += query[start]
+            start += 1
+        elif query[start].isalpha():
+            result += "child::" + query[start]
+            start += 1
+
+        while start < len(query):
+            if query[start] == "/" and query[start+1].isalpha():
+                result += "/child::"
+                start += 1
+            elif query[start] == "/" and query[start+1] == "/":
+                result += "/descendant-or-self::node()/child::"
+                start += 2
+            elif query[start].isalpha():
+                if not query[start-1].isalpha() and self.check_in_keyword_set(query, start):
+                    result += query[start]
+                    start += 1
+                elif query[start-1] == "[":
+                    result = result + "child::" + query[start]
+                    start += 1 
+                elif query[start-1] == " " and query[start-4:start-1] == "and":
+                    result = result + "child::" + query[start]
+                    start += 1
+                elif query[start-1] == " " and query[start-3:start-1] == "or":
+                    result = result + "child::" + query[start]
+                    start += 1
+                else:
+                    result += query[start]
+                    start += 1
+            
+            elif query[start] == "@":
+                result += "attribute::"
+                start += 1
+            elif query[start] == "." and query[start+1] == "/":
+                result += "self::node()"
+                start += 1
+            elif query[start:start+2] == "..":
+                result += "parent::node()"
+                start += 2
+            else:
+                result += query[start]
+                start += 1
+
+        return result
 
 
 if __name__ == "__main__":
@@ -338,6 +405,9 @@ if __name__ == "__main__":
                             "/child::library/descendant::country/ancestor::country",
                             "/child::library/descendant::artist/ancestor-or-self::artist"]
 
+    shortHandTests1 = "/library//title"
+    for result in testHandler.query(shortHandTests1):
+        pprint(result)
     # for result in testHandler.query(testXPath1):
     #     pprint(result)
     # for result in testHandler.query(testXPath2):
@@ -356,8 +426,8 @@ if __name__ == "__main__":
     #     for result in testHandler.query(xpath):
     #         pprint(result)
 
-    testPath = "/child::library[child::year>1990]"
-    for result in testHandler.query(testPath):
-        pprint(result)
+    # testPath = "/child::library[child::year>1990]"
+    # for result in testHandler.query(testPath):
+    #     pprint(result)
 
     # print(testHandler.updateSchema("store"))    # wrong collection name
