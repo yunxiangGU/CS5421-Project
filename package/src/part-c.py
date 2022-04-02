@@ -86,6 +86,7 @@ class XPathParser:
             accPath = ".".join(acc)
             if accPath != "":
                 return {"success": 1, "message": {"filters": filters, "projections": {accPath: 1}}}
+            return {"success": 1, "message": {"filters": filters}}
 
         # TODO: add support for predicates and other axes
         idxOpeningBracket = -1
@@ -200,8 +201,20 @@ class XPathParser:
                 if name == "node()" or (acc != [] and acc[-1] == name):
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
             return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
+        # case 4: "ancestor" and "ancestor-or-self" axes (/ancestor::div, /ancestor-or-self::div)
+        # (only returns the first ancestor (or self) due to pymongo restriction on path collision)
         elif re.compile("ancestor.*").match(axis) is not None:
-            pass
+            if axis == "ancestor-or-self" and (acc != [] and acc[-1] == name):
+                return self.queryHelper(tail, acc, currentNode.get(name), filters)
+            elif acc != []: 
+                acc.pop(-1)    # strip current node from acc
+                if name in acc:
+                    while acc != [] and acc[-1] != name:
+                        acc.pop(-1)
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
+            # all failing cases are collected here
+            return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
+                % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
 
 
     # ------------------------------helper functions-------------------------------------
@@ -278,6 +291,7 @@ class XPathParser:
                 self.findPaths(root[key], name, num, acc.copy(), paths)
                 acc.pop(-1)
 
+    # integrate correct results from all the successful branches (please set a default value for the integrated result)
     def integrateResults(self, integratedResult, branchResult):
         if integratedResult["success"] == 0:
             integratedResult = branchResult
@@ -300,8 +314,11 @@ if __name__ == "__main__":
     testXPath5 = "/child::library/child::artists/descendant::country"
     testXPath6 = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
 
-    parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()", \
-                            "/child::library/child::songs/descendant::title/parent::song"]
+    parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()",
+                            "/child::library/child::songs/descendant::title/parent::song",
+                            "/child::library/descendant::country/ancestor::artists",
+                            "/child::library/descendant::country/ancestor::country",
+                            "/child::library/descendant::artist/ancestor-or-self::artist"]
 
     # for result in testHandler.query(testXPath1):
     #     pprint(result)
