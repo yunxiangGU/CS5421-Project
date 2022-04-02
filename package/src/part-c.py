@@ -114,7 +114,9 @@ class XPathParser:
 
         if len(predicate) > 0:
             completePath = prevPath + '/' + predicate
-            completePath = completePath.replace("child::", "")    # deal with only the "child" axes for now
+            # might need to check the existence of "child" and "self" nodes
+            completePath = completePath.replace("child::", "")    # deal with only the "child" and "self" axes for now
+            completePath = re.sub("self::.*/", "", completePath)
             completePath = completePath.replace("/", ".")
 
             if ">=" in completePath:
@@ -135,8 +137,12 @@ class XPathParser:
             if len(operator) > 0:
                 predicateKey = completePath.split(operator)[0]
                 predicateValue = completePath.split(operator)[1]
-                if '\'' in predicateValue or '\"' in predicateValue:
-                    predicateValue = predicateValue[1: -1]
+                # add numeric transfer
+                try:
+                    predicateValue = float(predicateValue)
+                except ValueError:
+                    if '\'' in predicateValue or '\"' in predicateValue:
+                        predicateValue = predicateValue[1: -1]
                 print("***operator: ", operator)
                 if operator == ">=":
                     filters[predicateKey] = {'$gte': predicateValue}
@@ -176,7 +182,6 @@ class XPathParser:
             # default return value with no matching result
             integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
                                  % (acc[-1] if acc != [] else "(root node)", name)}
-
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
                 possibleResult = self.queryHelper(tail, acc, currentNode, filters)
@@ -215,6 +220,13 @@ class XPathParser:
             # all failing cases are collected here
             return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
                 % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+        # case 5: "self" axes (/self::para, /self::node())
+        elif axis == "self":
+            if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
+                return self.queryHelper(tail, acc, currentNode, filters)
+            else:
+                return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
+                    % (acc[-1] if acc != [] else "(root node)", name)}
 
 
     # ------------------------------helper functions-------------------------------------
@@ -246,6 +258,12 @@ class XPathParser:
 
         # step 2: get the collection name from the root element of xpath (assuming the xml model is well-formed)
         collectionInfo, nodes = (purePath[1:] + "/").split("/", 1)
+        # special process for "/child::collection_name[predicate]"
+        if nodes == "" and re.match(".+\[.+\]", collectionInfo):
+            outerPredicateSplit = re.compile("(\[.+\])").split(collectionInfo, 1)
+            if len(outerPredicateSplit) > 1:
+                collectionInfo = outerPredicateSplit[0]
+                nodes = "self::node()" + outerPredicateSplit[1] + "/"
         splitResult["collection"] = collectionInfo.split("::")[1]
 
         # step 3: split out pure xpath with "/"
@@ -333,9 +351,13 @@ if __name__ == "__main__":
     # for result in testHandler.query(testXPath6):
     #     pprint(result)
 
-    for xpath in parentAndAncestorTests:
-        print("-----------------------------------------------------\n")
-        for result in testHandler.query(xpath):
-            pprint(result)
+    # for xpath in parentAndAncestorTests:
+    #     print("-----------------------------------------------------\n")
+    #     for result in testHandler.query(xpath):
+    #         pprint(result)
+
+    testPath = "/child::library[child::year>1990]"
+    for result in testHandler.query(testPath):
+        pprint(result)
 
     # print(testHandler.updateSchema("store"))    # wrong collection name
