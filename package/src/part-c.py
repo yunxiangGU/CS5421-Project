@@ -102,6 +102,7 @@ class XPathParser:
                 if searchPath[i] == ']':
                     idxClosingBracket = i
                     break
+        # if a pair of "[]" is matched, extract the predicate from the node and build the rest of the search path
         if idxOpeningBracket != -1 and idxClosingBracket != -1:
             prevPath = searchPath[0: idxOpeningBracket]
             predicate = searchPath[idxOpeningBracket + 1: idxClosingBracket]
@@ -112,7 +113,7 @@ class XPathParser:
 
         if len(predicate) > 0:
             completePath = prevPath + '/' + predicate
-            completePath = completePath.replace("child::", "")
+            completePath = completePath.replace("child::", "")    # deal with only the "child" axes for now
             completePath = completePath.replace("/", ".")
 
             if ">=" in completePath:
@@ -149,22 +150,31 @@ class XPathParser:
                 elif operator == "=":
                     filters[predicateKey] = predicateValue
 
-        # case 1: "child" axes
+        # case 1: "child" axes (/child::para, /child::*)
         if axis == "child":
-            if currentNode.get(name) is not None:
+            if name == "*":
+                integratedResult = {"success": 0, "message": "Cannot find child from %s"
+                                     % (acc[-1] if acc != [] else "(root node)", name)}
+                for key in currentNode.keys():
+                    branch = acc.copy()
+                    branch.append(key)
+                    integratedResult = self.integrateResults(integratedResult,\
+                                         self.queryHelper(tail, branch, currentNode[key], filters))
+                return integratedResult
+            elif currentNode.get(name) is not None:
                 acc.append(name)
                 return self.queryHelper(tail, acc, currentNode[name], filters)
             else:
-                return {"success": 0, "message": "Cannot find complete path %s"
-                                                 % (" -> ".join(acc) + " -> " + name)}
-        # case 2: "descendant" and "descendant-or-self" axes
+                return {"success": 0, "message": "Cannot find complete path %s"\
+                     % (" -> ".join(acc) + " -> " + name)}
+        # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para, /descendant-or-self::node()/child::para)
         elif re.compile("descendant.*").match(axis) is not None:
             omittedPaths = []
             self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
 
             # default return value with no matching result
-            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"
-                                                         % (acc[-1] if acc != [] else "(root node)", name)}
+            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
+                                 % (acc[-1] if acc != [] else "(root node)", name)}
 
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
@@ -177,19 +187,22 @@ class XPathParser:
                 # "node()" here is specially adjusted for translation from "//" (abbreviated)
                 if name == "node()" and tail != "":
                     path.pop(-1)
-                extendedPath = acc.copy()
-                extendedPath.extend(path)
-                branchResult = self.queryHelper(tail, extendedPath, self.nodeInSchema(extendedPath), filters)
-                if integratedResult["success"] == 0:
-                    integratedResult = branchResult
-                elif branchResult["success"] == 1:
-                    for field, content in branchResult["message"].items():
-                        if not integratedResult["message"].get(field):
-                            integratedResult[field] = {}
-                        for key, val in content.items():
-                            integratedResult["message"][field][key] = val
-
+                branch = acc.copy()
+                branch.extend(path)
+                integratedResult = self.integrateResults(integratedResult,\
+                                    self.queryHelper(tail, branch, self.nodeInSchema(branch), filters))
             return integratedResult
+        # case 3: "parent" axes (/parent::para, /parent::node())
+        elif axis == "parent":
+            currentNodeName = "(root node)"
+            if acc != []:
+                currentNodeName = acc.pop(-1)
+                if name == "node()" or (acc != [] and acc[-1] == name):
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
+            return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
+        elif re.compile("ancestor.*").match(axis) is not None:
+            pass
+
 
     # ------------------------------helper functions-------------------------------------
 
@@ -265,16 +278,30 @@ class XPathParser:
                 self.findPaths(root[key], name, num, acc.copy(), paths)
                 acc.pop(-1)
 
+    def integrateResults(self, integratedResult, branchResult):
+        if integratedResult["success"] == 0:
+            integratedResult = branchResult
+        elif branchResult["success"] == 1:
+            for field, content in branchResult["message"].items():
+                if not integratedResult["message"].get(field):
+                    integratedResult[field] = {}
+                for key, val in content.items():
+                    integratedResult["message"][field][key] = val
+        return integratedResult
+
 
 if __name__ == "__main__":
     testHandler = XPathParser("mongodb://localhost:27017/", "test")
 
     testXPath1 = "/child::library/child::title/descendant-or-self::title"
     testXPath2 = "/child::library/descendant-or-self::node()/child::title"
-    testXPath3 = "/child::library/descendant::artist/child::country"
+    testXPath3 = "/child::library/descendant::artist/child::country"    # test 3, 4 and 5 are equivalent
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
-    testXPath6 = "/child::library/child::artists[child::artist/child::name>\"Wham!\"]"
+    testXPath6 = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
+
+    parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()", \
+                            "/child::library/child::songs/descendant::title/parent::song"]
 
     # for result in testHandler.query(testXPath1):
     #     pprint(result)
@@ -286,7 +313,12 @@ if __name__ == "__main__":
     #     pprint(result)
     # for result in testHandler.query(testXPath5):
     #     pprint(result)
-    for result in testHandler.query(testXPath6):
-        pprint(result)
+    # for result in testHandler.query(testXPath6):
+    #     pprint(result)
+
+    for xpath in parentAndAncestorTests:
+        print("-----------------------------------------------------\n")
+        for result in testHandler.query(xpath):
+            pprint(result)
 
     # print(testHandler.updateSchema("store"))    # wrong collection name
