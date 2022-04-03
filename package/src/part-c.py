@@ -41,15 +41,14 @@ class XPathParser:
         if not withID:
             searchContext["projections"]["_id"] = 0
 
-        queryResult = None
         # TODO: case 1: xpath with aggregate functions
         if searchContext["aggregate"] != "":
             if searchContext["aggregate"] == "count":
                 queryResult = self.db[searchContext["collection"]].count_documents(filter=searchContext.get("filters"))
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match":searchContext.get("filters")}
-                pipe = {'$group': {'_id': None, 'result': {'$'+searchContext["aggregate"]: '$'+projection_value}}}
+                filter_pipe = {"$match": searchContext.get("filters")}
+                pipe = {'$group': {'_id': None, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe])
         # case 2: xpath without aggregate functions
         else:
@@ -74,7 +73,7 @@ class XPathParser:
                 return result
 
         # Split filter conditions in advance and declare here, for delivering to queryHelper below
-        predicate = {"filters": splittedPath["filters"], "prevPath": splittedPath["prevPath"]}
+        predicate = {"filters": splittedPath["filters"]}
         searchContext = {"aggregate": splittedPath["aggregate"],
                          "collection": splittedPath["collection"]}
         # Now variable 'predicate' as the last param, instead of an empty dictionary
@@ -84,7 +83,7 @@ class XPathParser:
         else:
             for field, content in result["message"].items():
                 searchContext[field] = content
-            print("Search Context: ", searchContext)
+            # print("Search Context: ", searchContext)
             return {"success": 1, "message": searchContext}
 
     # recursively build up the search body
@@ -96,11 +95,11 @@ class XPathParser:
         if searchPath == "":
             accPath = ".".join(acc)
             if accPath != "":
-                # Call predicateHelper function to parse the filter conditions, so now this part is apart from queryHelper
-                filters = self.predicateHelper(filters["filters"], filters["prevPath"])
+                # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
+                filters = self.predicateHelper(filters["filters"], accPath)
                 return {"success": 1, "message": {"filters": filters, "projections": {accPath: 1}}}
             return {"success": 1, "message": {"filters": filters}}
-        print(searchPath)
+        # print("Search Path: ", searchPath)
         head, tail = searchPath.split("/", 1)
         axis, name = head.split("::")
 
@@ -108,27 +107,28 @@ class XPathParser:
         if axis == "child":
             if name == "*":
                 integratedResult = {"success": 0, "message": "Cannot find child from %s"
-                                     % (acc[-1] if acc != [] else "(root node)", name)}
+                                                             % (acc[-1] if acc != [] else "(root node)", name)}
                 for key in currentNode.keys():
                     branch = acc.copy()
                     branch.append(key)
-                    integratedResult = self.integrateResults(integratedResult,\
-                                         self.queryHelper(tail, branch, currentNode[key], filters))
+                    integratedResult = self.integrateResults(integratedResult,
+                                                             self.queryHelper(tail, branch, currentNode[key], filters))
                 return integratedResult
             elif currentNode.get(name) is not None:
                 acc.append(name)
                 return self.queryHelper(tail, acc, currentNode[name], filters)
             else:
-                return {"success": 0, "message": "Cannot find complete path %s"\
-                     % (" -> ".join(acc) + " -> " + name)}
-        # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para, /descendant-or-self::node()/child::para)
+                return {"success": 0, "message": "Cannot find complete path %s"
+                                                 % (" -> ".join(acc) + " -> " + name)}
+        # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para,
+        # /descendant-or-self::node()/child::para)
         elif re.compile("descendant.*").match(axis) is not None:
             omittedPaths = []
             self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
 
             # default return value with no matching result
-            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
-                                 % (acc[-1] if acc != [] else "(root node)", name)}
+            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"
+                                                         % (acc[-1] if acc != [] else "(root node)", name)}
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
                 possibleResult = self.queryHelper(tail, acc, currentNode, filters)
@@ -142,13 +142,14 @@ class XPathParser:
                     path.pop(-1)
                 branch = acc.copy()
                 branch.extend(path)
-                integratedResult = self.integrateResults(integratedResult,\
-                                    self.queryHelper(tail, branch, self.nodeInSchema(branch), filters))
+                integratedResult = self.integrateResults(integratedResult,
+                                                         self.queryHelper(tail, branch, self.nodeInSchema(branch),
+                                                                          filters))
             return integratedResult
         # case 3: "parent" axes (/parent::para, /parent::node())
         elif axis == "parent":
             currentNodeName = "(root node)"
-            if acc != []:
+            if acc:
                 currentNodeName = acc.pop(-1)
                 if name == "node()" or (acc != [] and acc[-1] == name):
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
@@ -158,23 +159,23 @@ class XPathParser:
         elif re.compile("ancestor.*").match(axis) is not None:
             if axis == "ancestor-or-self" and (acc != [] and acc[-1] == name):
                 return self.queryHelper(tail, acc, currentNode.get(name), filters)
-            elif acc != []:
-                acc.pop(-1)    # strip current node from acc
+            elif acc:
+                acc.pop(-1)  # strip current node from acc
                 if name in acc:
                     while acc != [] and acc[-1] != name:
                         acc.pop(-1)
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
             # all failing cases are collected here
-            return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
-                % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+            return {"success": 0, "message": "Cannot find ancestor(%s) %s from %s"
+                                             % ("exclusive" if axis == "ancestor" else "inclusive", name,
+                                                acc[-1] if acc != [] else "(root node)")}
         # case 5: "self" axes (/self::para, /self::node())
         elif axis == "self":
             if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
                 return self.queryHelper(tail, acc, currentNode, filters)
             else:
-                return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
-                    % (acc[-1] if acc != [] else "(root node)", name)}
-
+                return {"success": 0, "message": "current node %s cannot match with declared 'self' %s"
+                                                 % (acc[-1] if acc != [] else "(root node)", name)}
 
     # ------------------------------helper functions-------------------------------------
 
@@ -201,10 +202,9 @@ class XPathParser:
         # step 0: split out filter conditions
         filterSplit = self.splitFilterFunction(s)
         splitResult["filters"] = filterSplit["filters"]
-        splitResult["prevPath"] = filterSplit["prevPath"]
 
         # step 1: split out aggregation function keyword
-        # # Note the param now is the result of my splitFilterFunction which doesn't contain predicates, not the 's' which is the original path
+        # Note the param now is the result of splitFilterFunction which doesn't contain predicates
         aggregateSplit = self.splitAggregateFunction(filterSplit["searchPath"])
         splitResult["aggregate"] = aggregateSplit["aggregate"]
         purePath = aggregateSplit["path"]
@@ -236,7 +236,7 @@ class XPathParser:
             splitResult["path"] = aggregateSplit[0]
         return splitResult
 
-    # split the filter conditions in '[]' at the very first of the process for not affecting the aggregate split function
+    # split the filter conditions in '[]' at the very beginning of pipeline, keeping the aggregate split function intact
     def splitFilterFunction(self, s):
         splitResult = {"filters": ''}
 
@@ -253,22 +253,19 @@ class XPathParser:
                     idxClosingBracket = i
                     break
         if idxOpeningBracket != -1 and idxClosingBracket != -1:
-            prevPath = s[0: idxOpeningBracket]
             searchPath = s[0: idxOpeningBracket] + s[idxClosingBracket + 1:]
             predicate = s[idxOpeningBracket + 1: idxClosingBracket]
 
             splitResult["filters"] = predicate
-            splitResult["prevPath"] = prevPath[1:].split("/", 1)[1]
             splitResult["searchPath"] = searchPath
         else:
             splitResult["filters"] = ''
-            splitResult["prevPath"] = ''
             splitResult["searchPath"] = s
 
         return splitResult
 
-    # parse the filter conditions including 'and' 'or' 'not()' and other logic operators and return the result in dictionary form
-    def predicateHelper(self, predicate, prevPath):
+    # parse the filter conditions including 'and', 'or', 'not()', and other logic operators, result in dictionary format
+    def predicateHelper(self, predicate, accPath):
         operatorSet = {}
         res = []
         notFlag = False
@@ -294,73 +291,62 @@ class XPathParser:
                 if "not(" in predicate:
                     notFlag = True
                     predicate = predicate[4:-1]
-                completePath = prevPath + '/' + predicate
-                completePath = completePath.replace("child::", "")
-                completePath = completePath.replace("/", ".")
 
-                if ">=" in completePath:
+                if ">=" in predicate:
                     operator = ">="
-                elif "<=" in completePath:
+                elif "<=" in predicate:
                     operator = "<="
-                elif "!=" in completePath:
+                elif "!=" in predicate:
                     operator = "!="
-                elif ">" in completePath:
+                elif ">" in predicate:
                     operator = ">"
-                elif "<" in completePath:
+                elif "<" in predicate:
                     operator = "<"
-                elif "=" in completePath:
+                elif "=" in predicate:
                     operator = "="
                 else:
                     operator = ""
 
                 if len(operator) > 0:
-                    predicateKey = completePath.split(operator)[0]
-                    predicateValue = completePath.split(operator)[1]
+                    predicateValue = predicate.split(operator)[1]
                     if '\'' in predicateValue or '\"' in predicateValue:
                         predicateValue = predicateValue[1: -1]
-                    print("***operator: ", operator)
                     if operator == ">=":
                         if notFlag:
-                            res.append({predicateKey: {'$not': {'$gte': predicateValue}}})
+                            res.append({accPath: {'$not': {'$gte': predicateValue}}})
                             notFlag = False
                         else:
-                            res.append({predicateKey: {'$gte': predicateValue}})
-                        # filters[predicateKey] = {'$gte': predicateValue}
+                            res.append({accPath: {'$gte': predicateValue}})
                     elif operator == "<=":
                         if notFlag:
-                            res.append({predicateKey: {'$not': {'$lte': predicateValue}}})
+                            res.append({accPath: {'$not': {'$lte': predicateValue}}})
                             notFlag = False
                         else:
-                            res.append({predicateKey: {'$lte': predicateValue}})
-                        # filters[predicateKey] = {'$lte': predicateValue}
+                            res.append({accPath: {'$lte': predicateValue}})
                     elif operator == "!=":
                         if notFlag:
-                            res.append({predicateKey: {'$not': {'$ne': predicateValue}}})
+                            res.append({accPath: {'$not': {'$ne': predicateValue}}})
                             notFlag = False
                         else:
-                            res.append({predicateKey: {'$ne': predicateValue}})
-                        # filters[predicateKey] = {'$ne': predicateValue}
+                            res.append({accPath: {'$ne': predicateValue}})
                     elif operator == ">":
                         if notFlag:
-                            res.append({predicateKey: {'$not': {'$gt': predicateValue}}})
+                            res.append({accPath: {'$not': {'$gt': predicateValue}}})
                             notFlag = False
                         else:
-                            res.append({predicateKey: {'$gt': predicateValue}})
-                        # filters[predicateKey] = {'$gt': predicateValue}
+                            res.append({accPath: {'$gt': predicateValue}})
                     elif operator == "<":
                         if notFlag:
-                            res.append({predicateKey: {'$not': {'$lt': predicateValue}}})
+                            res.append({accPath: {'$not': {'$lt': predicateValue}}})
                             notFlag = False
                         else:
-                            res.append({predicateKey: {'$lt': predicateValue}})
-                        # filters[predicateKey] = {'$lt': predicateValue}
+                            res.append({accPath: {'$lt': predicateValue}})
                     elif operator == "=":
                         if notFlag:
-                            print("ERROR! Not() function cannot be used with '='. Please use '!='")
+                            print("ERROR! not() function cannot be used with '='. Please use '!='")
                             return {'error': 'error'}
                         else:
-                            res.append({predicateKey: predicateValue})
-                        # filters[predicateKey] = predicateValue
+                            res.append({accPath: predicateValue})
 
         filters = {}
 
@@ -425,12 +411,12 @@ class XPathParser:
         keyword_set = set(keyword_list)
         keyword_len_set = set(list(map(len, keyword_list)))
         for l in keyword_len_set:
-            result = result or (query[start:start+l] in keyword_set and not query[start+l].isalpha())
+            result = result or (query[start:start + l] in keyword_set and not query[start + l].isalpha())
         return result
 
     def translate_to_full_syntax(self, query):
         result = ""
-        start= 0
+        start = 0
 
         if query[start].isalpha() and self.check_in_keyword_set(query, start):
             result += query[start]
@@ -440,23 +426,23 @@ class XPathParser:
             start += 1
 
         while start < len(query):
-            if query[start] == "/" and query[start+1].isalpha():
+            if query[start] == "/" and query[start + 1].isalpha():
                 result += "/child::"
                 start += 1
-            elif query[start] == "/" and query[start+1] == "/":
+            elif query[start] == "/" and query[start + 1] == "/":
                 result += "/descendant-or-self::node()/child::"
                 start += 2
             elif query[start].isalpha():
-                if not query[start-1].isalpha() and self.check_in_keyword_set(query, start):
+                if not query[start - 1].isalpha() and self.check_in_keyword_set(query, start):
                     result += query[start]
                     start += 1
-                elif query[start-1] == "[":
+                elif query[start - 1] == "[":
                     result = result + "child::" + query[start]
                     start += 1
-                elif query[start-1] == " " and query[start-4:start-1] == "and":
+                elif query[start - 1] == " " and query[start - 4:start - 1] == "and":
                     result = result + "child::" + query[start]
                     start += 1
-                elif query[start-1] == " " and query[start-3:start-1] == "or":
+                elif query[start - 1] == " " and query[start - 3:start - 1] == "or":
                     result = result + "child::" + query[start]
                     start += 1
                 else:
@@ -466,10 +452,10 @@ class XPathParser:
             elif query[start] == "@":
                 result += "attribute::"
                 start += 1
-            elif query[start] == "." and query[start+1] == "/":
+            elif query[start] == "." and query[start + 1] == "/":
                 result += "self::node()"
                 start += 1
-            elif query[start:start+2] == "..":
+            elif query[start:start + 2] == "..":
                 result += "parent::node()"
                 start += 2
             else:
@@ -484,40 +470,54 @@ if __name__ == "__main__":
 
     testXPath1 = "/child::library/child::title/descendant-or-self::title"
     testXPath2 = "/child::library/descendant-or-self::node()/child::title"
-    testXPath3 = "/child::library/descendant::artist/child::country"    # test 3, 4 and 5 are equivalent
+    testXPath3 = "/child::library/descendant::artist/child::country"  # test 3, 4 and 5 are equivalent
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
     testXPath6 = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
+    for result in testHandler.query(testXPath1):
+        pprint(result)
+    print("--------------------------------------------------")
+    for result in testHandler.query(testXPath2):
+        pprint(result)
+    print("--------------------------------------------------")
+    for result in testHandler.query(testXPath3):
+        pprint(result)
+    print("--------------------------------------------------")
+    for result in testHandler.query(testXPath4):
+        pprint(result)
+    print("--------------------------------------------------")
+    for result in testHandler.query(testXPath5):
+        pprint(result)
+    print("--------------------------------------------------")
+    for result in testHandler.query(testXPath6):
+        pprint(result)
+    print("--------------------------------------------------")
 
     parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()",
-                            "/child::library/child::songs/descendant::title/parent::song",
-                            "/child::library/descendant::country/ancestor::artists",
-                            "/child::library/descendant::country/ancestor::country",
-                            "/child::library/descendant::artist/ancestor-or-self::artist"]
+                              "/child::library/child::songs/descendant::title/parent::song",
+                              "/child::library/descendant::country/ancestor::artists",
+                              "/child::library/descendant::country/ancestor::country",
+                              "/child::library/descendant::artist/ancestor-or-self::artist"]
+    for xpath in parentAndAncestorTests:
+        print("-----------------------------------------------------\n")
+        for result in testHandler.query(xpath):
+            pprint(result)
+    print("--------------------------------------------------")
 
     shortHandTests1 = "/library//title"
-    # for result in testHandler.query(shortHandTests1):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath1):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath2):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath3):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath4):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath5):
-    #     pprint(result)
-    # for result in testHandler.query(testXPath6):
-    #     pprint(result)
+    for result in testHandler.query(shortHandTests1):
+        pprint(result)
+    print("--------------------------------------------------")
 
-    # for xpath in parentAndAncestorTests:
-    #     print("-----------------------------------------------------\n")
-    #     for result in testHandler.query(xpath):
-    #         pprint(result)
+    testPath = "/child::library[child::year>1990]"
+    for result in testHandler.query(testPath):
+        pprint(result)
+    print("--------------------------------------------------")
 
-    # testPath = "/child::library[child::year>1990]"
-    # for result in testHandler.query(testPath):
-    #     pprint(result)
+    print(testHandler.updateSchema("store"))    # wrong collection name
+    print("--------------------------------------------------")
 
-    # print(testHandler.updateSchema("store"))    # wrong collection name
+    myPath = "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::title"
+    for result in testHandler.query(myPath):
+        pprint(result)
+    print("--------------------------------------------------")
