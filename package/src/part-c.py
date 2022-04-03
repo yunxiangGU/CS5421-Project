@@ -73,7 +73,7 @@ class XPathParser:
                 return result
 
         # Split filter conditions in advance and declare here, for delivering to queryHelper below
-        predicate = {"filters": splittedPath["filters"]}
+        predicate = {"filters": splittedPath["filters"]}    # TODO: check predicates
         searchContext = {"aggregate": splittedPath["aggregate"],
                          "collection": splittedPath["collection"]}
         # Now variable 'predicate' as the last param, instead of an empty dictionary
@@ -91,7 +91,7 @@ class XPathParser:
     #           acc: all the ancestors processed;
     #           currentNode: current node in the schema
     # @returns: success message with filter, projection, ... or error message
-    def queryHelper(self, searchPath, acc, currentNode, filters):
+    def queryHelper(self, searchPath, acc, currentNode):
         if searchPath == "":
             accPath = ".".join(acc)
             if accPath != "":
@@ -112,11 +112,11 @@ class XPathParser:
                     branch = acc.copy()
                     branch.append(key)
                     integratedResult = self.integrateResults(integratedResult,\
-                                         self.queryHelper(tail, branch, currentNode[key], filters))
+                                         self.queryHelper(tail, branch, currentNode[key]))
                 return integratedResult
             elif currentNode.get(name) is not None:
                 acc.append(name)
-                return self.queryHelper(tail, acc, currentNode[name], filters)
+                return self.queryHelper(tail, acc, currentNode[name])
             else:
                 return {"success": 0, "message": "Cannot find complete path %s"\
                      % (" -> ".join(acc) + " -> " + name)}
@@ -130,7 +130,7 @@ class XPathParser:
                                  % (acc[-1] if acc != [] else "(root node)", name)}
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
-                possibleResult = self.queryHelper(tail, acc, currentNode, filters)
+                possibleResult = self.queryHelper(tail, acc, currentNode)
                 if possibleResult["success"] == 1:
                     integratedResult = possibleResult
             # case 2: find some paths from current node to "name"
@@ -142,7 +142,7 @@ class XPathParser:
                 branch = acc.copy()
                 branch.extend(path)
                 integratedResult = self.integrateResults(integratedResult,\
-                                    self.queryHelper(tail, branch, self.nodeInSchema(branch), filters))
+                                    self.queryHelper(tail, branch, self.nodeInSchema(branch)))
             return integratedResult
         # case 3: "parent" axes (/parent::para, /parent::node())
         elif axis == "parent":
@@ -150,26 +150,26 @@ class XPathParser:
             if acc:
                 currentNodeName = acc.pop(-1)
                 if name == "node()" or (acc != [] and acc[-1] == name):
-                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc))
             return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
         # case 4: "ancestor" and "ancestor-or-self" axes (/ancestor::div, /ancestor-or-self::div)
         # (only returns the first ancestor (or self) due to pymongo restriction on path collision)
         elif re.compile("ancestor.*").match(axis) is not None:
             if axis == "ancestor-or-self" and (acc != [] and acc[-1] == name):
-                return self.queryHelper(tail, acc, currentNode.get(name), filters)
+                return self.queryHelper(tail, acc, currentNode.get(name))
             elif acc:
                 acc.pop(-1)  # strip current node from acc
                 if name in acc:
                     while acc != [] and acc[-1] != name:
                         acc.pop(-1)
-                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters)
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc))
             # all failing cases are collected here
             return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
                 % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
         # case 5: "self" axes (/self::para, /self::node())
         elif axis == "self":
             if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
-                return self.queryHelper(tail, acc, currentNode, filters)
+                return self.queryHelper(tail, acc, currentNode)
             else:
                 return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
                     % (acc[-1] if acc != [] else "(root node)", name)}
@@ -473,7 +473,7 @@ if __name__ == "__main__":
                 pprint(result)
             print("-----------------------------------------------------\n")
 
-    # test part 1: "child" and "descendant" axes
+    # test set 1: "child" and "descendant" axes
     childAndDescendantTests = [
         "/child::library/child::title/descendant-or-self::title",
         "/child::library/descendant-or-self::node()/child::title",
@@ -481,20 +481,17 @@ if __name__ == "__main__":
         "/child::library/descendant::country",
         "/child::library/child::artists/descendant::country"
     ]
-
-    # test part 2: "parent" and "ancestor" axes
+    # test set 2: "parent" and "ancestor" axes
     parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()",
                               "/child::library/child::songs/descendant::title/parent::song",
                               "/child::library/descendant::country/ancestor::artists",
                               "/child::library/descendant::country/ancestor::country",    # intentially failed test
                               "/child::library/descendant::artist/ancestor-or-self::artist"]
-
-    # test part 3: shorthand tests
+    # test set 3: shorthand tests
     shortHandTests = [
         "/library//title",
     ]
-
-    # test part 4: predicate tests
+    # test set 4: predicate tests
     predicateTests = [
         "/child::library[child::year>1990]",
         "/child::library/child::artists[child::artist/child::name<\"Wham!\"]",
