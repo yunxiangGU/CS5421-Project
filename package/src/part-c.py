@@ -45,7 +45,6 @@ class XPathParser:
             print("please implement logics for aggregation.")
         # case 2: xpath without aggregate functions
         else:
-            # only considers "child" and "descendant" axes for now
             queryResult = self.db[searchContext["collection"]].find(
                 filter=searchContext.get("filters"),
                 projection=searchContext.get("projections"))
@@ -114,7 +113,8 @@ class XPathParser:
 
         if len(predicate) > 0:
             completePath = prevPath + '/' + predicate
-            # might need to check the existence of "child" and "self" nodes
+            # TODO: might need to check the existence of "child" and "self" nodes
+            # TODO: take care if search path includes axes other than "child" and "self"
             completePath = completePath.replace("child::", "")    # deal with only the "child" and "self" axes for now
             completePath = re.sub("self::.*/", "", completePath)
             completePath = completePath.replace("/", ".")
@@ -331,12 +331,17 @@ if __name__ == "__main__":
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
     testXPath6 = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
+    testXPath7 = "/child::library[child::year>1990]"
 
     parentAndAncestorTests = ["/child::library/child::songs/descendant::title/parent::node()",
                             "/child::library/child::songs/descendant::title/parent::song",
                             "/child::library/descendant::country/ancestor::artists",
                             "/child::library/descendant::country/ancestor::country",
                             "/child::library/descendant::artist/ancestor-or-self::artist"]
+
+    selfTests = ["/child::library/child::songs/child::song/self::song[child::title=\"Payam Island\"]/child::title",
+                "/child::library/child::title/self::node()",
+                "/child::library/child::title/self::year"]
 
     # for result in testHandler.query(testXPath1):
     #     pprint(result)
@@ -351,13 +356,9 @@ if __name__ == "__main__":
     # for result in testHandler.query(testXPath6):
     #     pprint(result)
 
-    # for xpath in parentAndAncestorTests:
-    #     print("-----------------------------------------------------\n")
-    #     for result in testHandler.query(xpath):
-    #         pprint(result)
-
-    testPath = "/child::library[child::year>1990]"
-    for result in testHandler.query(testPath):
-        pprint(result)
+    for xpath in selfTests:
+        print("-----------------------------------------------------\n")
+        for result in testHandler.query(xpath):
+            pprint(result)
 
     # print(testHandler.updateSchema("store"))    # wrong collection name
