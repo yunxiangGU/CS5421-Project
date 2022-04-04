@@ -32,6 +32,10 @@ class XPathParser:
     def query(self, s, withID=True):
         if not self.check_is_full_syntax(s):
             s = self.translate_to_full_syntax(s)
+<<<<<<< Updated upstream
+=======
+        print("***query: ", s)
+>>>>>>> Stashed changes
         generationResult = self.generateSearch(s)
         # return error message
         if generationResult["success"] == 0:
@@ -73,7 +77,13 @@ class XPathParser:
                 return result
 
         # Split filter conditions in advance and declare here, for delivering to queryHelper below
+<<<<<<< Updated upstream
         predicate = {"filters": splittedPath["filters"]}
+=======
+        predicate = {}
+        if "filters" in splittedPath.keys():
+            predicate = {"filters": splittedPath["filters"], "prevNode": splittedPath["prevNode"]}
+>>>>>>> Stashed changes
         searchContext = {"aggregate": splittedPath["aggregate"],
                          "collection": splittedPath["collection"]}
         # Now variable 'predicate' as the last param, instead of an empty dictionary
@@ -83,7 +93,11 @@ class XPathParser:
         else:
             for field, content in result["message"].items():
                 searchContext[field] = content
+<<<<<<< Updated upstream
             # print("Search Context: ", searchContext)
+=======
+            print("Search Context: ", searchContext)
+>>>>>>> Stashed changes
             return {"success": 1, "message": searchContext}
 
     # recursively build up the search body
@@ -96,10 +110,18 @@ class XPathParser:
             accPath = ".".join(acc)
             if accPath != "":
                 # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
+<<<<<<< Updated upstream
                 filters = self.predicateHelper(filters["filters"], accPath)
                 return {"success": 1, "message": {"filters": filters, "projections": {accPath: 1}}}
             return {"success": 1, "message": {"filters": filters}}
         # print("Search Path: ", searchPath)
+=======
+                if "filters" in filters.keys():
+                    filters = self.predicateHelper(filters["filters"], filters["prevNode"], accPath)
+                return {"success": 1, "message": {"filters": filters, "projections": {accPath: 1}}}
+            return {"success": 1, "message": {"filters": filters}}
+        print("Search Path: ", searchPath)
+>>>>>>> Stashed changes
         head, tail = searchPath.split("/", 1)
         axis, name = head.split("::")
 
@@ -107,7 +129,11 @@ class XPathParser:
         if axis == "child":
             if name == "*":
                 integratedResult = {"success": 0, "message": "Cannot find child from %s"
+<<<<<<< Updated upstream
                                                              % (acc[-1] if acc != [] else "(root node)", name)}
+=======
+                                                             % (acc[-1] if acc else "(root node)*")}
+>>>>>>> Stashed changes
                 for key in currentNode.keys():
                     branch = acc.copy()
                     branch.append(key)
@@ -201,7 +227,13 @@ class XPathParser:
 
         # step 0: split out filter conditions
         filterSplit = self.splitFilterFunction(s)
+<<<<<<< Updated upstream
         splitResult["filters"] = filterSplit["filters"]
+=======
+        if "filters" in filterSplit.keys():
+            splitResult["filters"] = filterSplit["filters"]
+        splitResult["prevNode"] = filterSplit["prevNode"]
+>>>>>>> Stashed changes
 
         # step 1: split out aggregation function keyword
         # Note the param now is the result of splitFilterFunction which doesn't contain predicates
@@ -238,7 +270,12 @@ class XPathParser:
 
     # split the filter conditions in '[]' at the very beginning of pipeline, keeping the aggregate split function intact
     def splitFilterFunction(self, s):
+<<<<<<< Updated upstream
         splitResult = {"filters": ''}
+=======
+        print("***query: ", s)
+        splitResult = {}
+>>>>>>> Stashed changes
 
         idxOpeningBracket = -1
         idxClosingBracket = -1
@@ -253,10 +290,15 @@ class XPathParser:
                     idxClosingBracket = i
                     break
         if idxOpeningBracket != -1 and idxClosingBracket != -1:
+<<<<<<< Updated upstream
+=======
+            prevPath = s[0: idxOpeningBracket]
+>>>>>>> Stashed changes
             searchPath = s[0: idxOpeningBracket] + s[idxClosingBracket + 1:]
             predicate = s[idxOpeningBracket + 1: idxClosingBracket]
 
             splitResult["filters"] = predicate
+<<<<<<< Updated upstream
             splitResult["searchPath"] = searchPath
         else:
             splitResult["filters"] = ''
@@ -266,6 +308,18 @@ class XPathParser:
 
     # parse the filter conditions including 'and', 'or', 'not()', and other logic operators, result in dictionary format
     def predicateHelper(self, predicate, accPath):
+=======
+            splitResult["prevNode"] = prevPath[1:].split("/", 1)[-1].split("::")[-1]
+            splitResult["searchPath"] = searchPath
+        else:
+            splitResult["prevNode"] = ''
+            splitResult["searchPath"] = s
+        print("***splitResult: ", splitResult)
+        return splitResult
+
+    # parse the filter conditions including 'and', 'or', 'not()', and other logic operators, result in dictionary format
+    def predicateHelper(self, predicate, prevNode, accPath):
+>>>>>>> Stashed changes
         operatorSet = {}
         res = []
         notFlag = False
@@ -291,6 +345,13 @@ class XPathParser:
                 if "not(" in predicate:
                     notFlag = True
                     predicate = predicate[4:-1]
+<<<<<<< Updated upstream
+=======
+                prevPath = accPath[:(accPath.rfind(prevNode)+len(prevNode))]
+                completePath = prevPath + '/' + predicate
+                completePath = completePath.replace("child::", "")
+                completePath = completePath.replace("/", ".")
+>>>>>>> Stashed changes
 
                 if ">=" in predicate:
                     operator = ">="
@@ -308,11 +369,16 @@ class XPathParser:
                     operator = ""
 
                 if len(operator) > 0:
+<<<<<<< Updated upstream
+=======
+                    predicateKey = completePath.split(operator)[0]
+>>>>>>> Stashed changes
                     predicateValue = predicate.split(operator)[1]
                     if '\'' in predicateValue or '\"' in predicateValue:
                         predicateValue = predicateValue[1: -1]
                     if operator == ">=":
                         if notFlag:
+<<<<<<< Updated upstream
                             res.append({accPath: {'$not': {'$gte': predicateValue}}})
                             notFlag = False
                         else:
@@ -341,12 +407,46 @@ class XPathParser:
                             notFlag = False
                         else:
                             res.append({accPath: {'$lt': predicateValue}})
+=======
+                            res.append({predicateKey: {'$not': {'$gte': predicateValue}}})
+                            notFlag = False
+                        else:
+                            res.append({predicateKey: {'$gte': predicateValue}})
+                    elif operator == "<=":
+                        if notFlag:
+                            res.append({predicateKey: {'$not': {'$lte': predicateValue}}})
+                            notFlag = False
+                        else:
+                            res.append({predicateKey: {'$lte': predicateValue}})
+                    elif operator == "!=":
+                        if notFlag:
+                            res.append({predicateKey: {'$not': {'$ne': predicateValue}}})
+                            notFlag = False
+                        else:
+                            res.append({predicateKey: {'$ne': predicateValue}})
+                    elif operator == ">":
+                        if notFlag:
+                            res.append({predicateKey: {'$not': {'$gt': predicateValue}}})
+                            notFlag = False
+                        else:
+                            res.append({predicateKey: {'$gt': predicateValue}})
+                    elif operator == "<":
+                        if notFlag:
+                            res.append({predicateKey: {'$not': {'$lt': predicateValue}}})
+                            notFlag = False
+                        else:
+                            res.append({predicateKey: {'$lt': predicateValue}})
+>>>>>>> Stashed changes
                     elif operator == "=":
                         if notFlag:
                             print("ERROR! not() function cannot be used with '='. Please use '!='")
                             return {'error': 'error'}
                         else:
+<<<<<<< Updated upstream
                             res.append({accPath: predicateValue})
+=======
+                            res.append({predicateKey: predicateValue})
+>>>>>>> Stashed changes
 
         filters = {}
 
@@ -473,7 +573,11 @@ if __name__ == "__main__":
     testXPath3 = "/child::library/descendant::artist/child::country"  # test 3, 4 and 5 are equivalent
     testXPath4 = "/child::library/descendant::country"
     testXPath5 = "/child::library/child::artists/descendant::country"
+<<<<<<< Updated upstream
     testXPath6 = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
+=======
+
+>>>>>>> Stashed changes
     for result in testHandler.query(testXPath1):
         pprint(result)
     print("--------------------------------------------------")
@@ -489,7 +593,23 @@ if __name__ == "__main__":
     for result in testHandler.query(testXPath5):
         pprint(result)
     print("--------------------------------------------------")
+<<<<<<< Updated upstream
     for result in testHandler.query(testXPath6):
+=======
+
+    predicateTest = "/child::library/child::artists[child::artist/child::name<\"Wham!\"]"
+    for result in testHandler.query(predicateTest):
+        pprint(result)
+    print("--------------------------------------------------")
+
+    predicateTest2 = "/child::library[child::year>1990]"
+    for result in testHandler.query(predicateTest2):
+        pprint(result)
+    print("--------------------------------------------------")
+
+    predicateTest3 = "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration"
+    for result in testHandler.query(predicateTest3):
+>>>>>>> Stashed changes
         pprint(result)
     print("--------------------------------------------------")
 
@@ -504,6 +624,7 @@ if __name__ == "__main__":
             pprint(result)
     print("--------------------------------------------------")
 
+<<<<<<< Updated upstream
     shortHandTests1 = "/library//title"
     for result in testHandler.query(shortHandTests1):
         pprint(result)
@@ -511,13 +632,23 @@ if __name__ == "__main__":
 
     testPath = "/child::library[child::year>1990]"
     for result in testHandler.query(testPath):
+=======
+    shortHandTest = "/library//title"
+    for result in testHandler.query(shortHandTest):
+>>>>>>> Stashed changes
         pprint(result)
     print("--------------------------------------------------")
 
     print(testHandler.updateSchema("store"))    # wrong collection name
     print("--------------------------------------------------")
 
+<<<<<<< Updated upstream
     myPath = "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::title"
     for result in testHandler.query(myPath):
         pprint(result)
     print("--------------------------------------------------")
+=======
+    rootTest = "/child::library"
+    for result in testHandler.query(rootTest):
+        pprint(result)
+>>>>>>> Stashed changes
