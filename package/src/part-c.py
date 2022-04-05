@@ -609,12 +609,8 @@ class XPathParser:
         if searchContext.get("projections") != None:
             projected_fields = [{path.replace(".", "/"): "$" + path} 
                                 for path in searchContext["projections"] if path != "_id"]
-            # project all fields for an empty but successful search
-            if projected_fields == []:
-                project_pipe = [{"$project": {"document": "$$ROOT"}}, 
-                                {"$replaceRoot": { "newRoot": "$document" }}]
             # project degsinated fields and try to unwind leaf nodes
-            else:
+            if projected_fields != []:
                 project_pipe = [{"$project": {"splittedFields": projected_fields, 
                                     "_id": searchContext["projections"]["_id"] 
                                         if searchContext.get("projections").get("_id") != None else 1}}, 
@@ -623,6 +619,11 @@ class XPathParser:
                                     for path in projected_fields])
                 project_pipe.extend([{"$addFields": {"splittedFields._id": "$_id"}}, 
                                     {"$replaceRoot": {"newRoot": "$splittedFields"}}])
+        # project all fields for an empty but successful search
+        if project_pipe == []:
+            project_pipe = [{"$project": {"document": "$$ROOT"}}, 
+                            {"$replaceRoot": { "newRoot": "$document" }}]
+
         pipe.extend(filter_pipe)
         pipe.extend(project_pipe)
         return pipe
@@ -644,7 +645,7 @@ if __name__ == "__main__":
         "/child::library/descendant::artist/ancestor-or-self::artist", # 9
         "/child::library/descendant::title", # 10 (unwind test)
         "/child::library/descendant::song", # 11
-        "/child::library/child::songs" # 12
+        "/child::library/descendant::songs" # 12
     ]
 
     predicateTests = [
