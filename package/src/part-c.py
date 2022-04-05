@@ -41,6 +41,7 @@ class XPathParser:
         if not withID:
             searchContext["projections"]["_id"] = 0
 
+        print(searchContext)
         queryResult = None
         # TODO: case 1: xpath with aggregate functions
         if searchContext["aggregate"] != "":
@@ -498,8 +499,9 @@ if __name__ == "__main__":
     predicateTests = [
         "/child::library[child::year>1990]",
         "/child::library/child::artists[child::artist/child::name<\"Wham!\"]",
-        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::title"
+        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::title",
+        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration"
     ]
 
     # choose a test set and conduct the tests!
-    printTests(parentAndAncestorTests, name="parent and ancestor axes")
+    printTests(predicateTests, name="predicates")
