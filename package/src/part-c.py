@@ -58,7 +58,7 @@ class XPathParser:
                 filter_pipe = {"$match": searchContext.get("filters")}
                 result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, result_pipe])
-        
+
         # case 2: xpath with aggregate functions in predicate
         elif searchContext["predicateAggregate"] != "":
             projection_value = list(searchContext.get("projections").keys())[0]
@@ -75,7 +75,7 @@ class XPathParser:
                 add_field_pipe = {"$addFields":{"addedField":{"$"+searchContext["predicateAggregate"]:"$"+filter_key}}}
             match_pipe = {"$match":{"addedField":{filter_value_key:filter_value_value}}}
             project_pipe = {"$project":{projection_value:1}}
-            
+
             # xpath with aggregate functions in predicate and final
             if searchContext["innerAggregate"] != {}:
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
@@ -102,7 +102,7 @@ class XPathParser:
                     # xpath with aggregate functions not in outer
                     else:
                         queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, pipe])
-            
+
             # xpath with aggregate functions in predicate and not in final
             else:
                 # xpath with aggregate functions in predicate and not in final and in outer
@@ -115,7 +115,7 @@ class XPathParser:
                 # xpath with aggregate functions in predicate and not in final and not in outer
                 else:
                     queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe])
-        
+
         # case 3: xpath without aggregate functions in predicate
         else:
             # only considers "child" and "descendant" axes for now
@@ -127,7 +127,7 @@ class XPathParser:
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
                 filter_pipe = {"$match":searchContext.get("filters")}
-                
+
                 # xpath with aggregate functions in final
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
                     pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$cond": { "if": { "$isArray": '$'+projection_value }, "then": { "$size": '$'+projection_value }, "else": 1}}}}
@@ -140,7 +140,7 @@ class XPathParser:
                             queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe, result_pipe])
                     else:
                         print("query result: " + queryResult)
-                
+
                 # xpath without aggregate functions in final
                 else:
                     pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
@@ -152,7 +152,7 @@ class XPathParser:
                         else:
                             result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$result'}}}
                             queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe, result_pipe])
-                    
+
                     # xpath without aggregate functions in outer
                     else:
                         queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe])
@@ -382,7 +382,7 @@ class XPathParser:
         else:
             splitResult["prevNode"] = ''
             splitResult["searchPath"] = s
-        
+
         if splitResult.get("filters"):
             predicate = splitResult["filters"]
             if self.check_in_keyword_set(predicate, 0):
@@ -422,9 +422,6 @@ class XPathParser:
                     notFlag = True
                     predicate = predicate[4:-1]
                 prevPath = accPath[:(accPath.rfind(prevNode)+len(prevNode))]
-                completePath = prevPath + '/' + predicate
-                completePath = completePath.replace("child::", "")
-                completePath = completePath.replace("/", ".")
 
                 if ">=" in predicate:
                     operator = ">="
@@ -442,7 +439,12 @@ class XPathParser:
                     operator = ""
 
                 if len(operator) > 0:
-                    predicateKey = completePath.split(operator)[0]
+
+                    schemaNow = self.schema
+                    for each in prevPath.split("."):
+                        schemaNow = schemaNow.get(each)
+
+                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', prevPath.split("."), schemaNow)["message"]["projections"].keys())[0]
                     predicateValue = predicate.split(operator)[1]
                     if '\'' in predicateValue or '\"' in predicateValue:
                         predicateValue = predicateValue[1: -1]
@@ -607,26 +609,113 @@ class XPathParser:
         if searchContext.get("filters") != None:
             filter_pipe = [{"$match": searchContext.get("filters")}]
         if searchContext.get("projections") != None:
-            projected_fields = [{path.replace(".", "/"): "$" + path} 
+            projected_fields = [{path.replace(".", "/"): "$" + path}
                                 for path in searchContext["projections"] if path != "_id"]
             # project degsinated fields and try to unwind leaf nodes
             if projected_fields != []:
-                project_pipe = [{"$project": {"splittedFields": projected_fields, 
-                                    "_id": searchContext["projections"]["_id"] 
-                                        if searchContext.get("projections").get("_id") != None else 1}}, 
+                project_pipe = [{"$project": {"splittedFields": projected_fields,
+                                    "_id": searchContext["projections"]["_id"]
+                                        if searchContext.get("projections").get("_id") != None else 1}},
                                 {"$unwind": "$splittedFields"}]
-                project_pipe.extend([{"$unwind": {"path": "$splittedFields." + (list(path.keys()))[0], "preserveNullAndEmptyArrays": True}} 
+                project_pipe.extend([{"$unwind": {"path": "$splittedFields." + (list(path.keys()))[0], "preserveNullAndEmptyArrays": True}}
                                     for path in projected_fields])
-                project_pipe.extend([{"$addFields": {"splittedFields._id": "$_id"}}, 
+                project_pipe.extend([{"$addFields": {"splittedFields._id": "$_id"}},
                                     {"$replaceRoot": {"newRoot": "$splittedFields"}}])
         # project all fields for an empty but successful search
         if project_pipe == []:
-            project_pipe = [{"$project": {"document": "$$ROOT"}}, 
+            project_pipe = [{"$project": {"document": "$$ROOT"}},
                             {"$replaceRoot": { "newRoot": "$document" }}]
 
         pipe.extend(filter_pipe)
         pipe.extend(project_pipe)
         return pipe
+
+    def test(self, searchPath, acc, currentNode, innerAggregate={}):
+        if searchPath == "":
+            accPath = ".".join(acc)
+            context = {"innerAggregate" : innerAggregate}
+            if not currentNode is dict:
+                context["unwind"] = {"$" + accPath: 1}
+            if accPath != "":
+                context["projections"] = {accPath : 1}
+            return context["projections"] # return {"success": 1, "message": context}
+
+        print("Search Path: ", searchPath)
+
+        head, tail = searchPath.split("/", 1)
+        axis, name = head.split("::")
+
+        # case 1: "child" axes (/child::para, /child::*)
+        if axis == "child":
+            if name == "*":
+                integratedResult = {"success": 0, "message": "Cannot find child from %s"
+                                                             % (acc[-1] if acc else "(root node)*")}
+                for key in currentNode.keys():
+                    branch = acc.copy()
+                    branch.append(key)
+                    integratedResult = self.integrateResults(integratedResult,
+                                        self.queryHelper(tail, branch, currentNode[key], innerAggregate))
+                return integratedResult
+            elif currentNode.get(name) is not None:
+                acc.append(name)
+                return self.queryHelper(tail, acc, currentNode[name], innerAggregate)
+            else:
+                return {"success": 0, "message": "Cannot find complete path %s"\
+                     % (" -> ".join(acc) + " -> " + name)}
+        # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para, /descendant-or-self::node()/child::para)
+        elif re.compile("descendant.*").match(axis) is not None:
+            omittedPaths = []
+            self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
+
+            # default return value with no matching result
+            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
+                                 % (acc[-1] if acc != [] else "(root node)", name)}
+            # case 1: special case for "descendant-or-self"
+            if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
+                possibleResult = self.queryHelper(tail, acc, currentNode, innerAggregate)
+                if possibleResult["success"] == 1:
+                    integratedResult = possibleResult
+            # case 2: find some paths from current node to "name"
+            for path in omittedPaths:
+                # raw use of "node()" is not well-supported because of position collision in pymongo
+                # "node()" here is specially adjusted for translation from "//" (abbreviated)
+                if name == "node()" and tail != "":
+                    path.pop(-1)
+                branch = acc.copy()
+                branch.extend(path)
+                integratedResult = self.integrateResults(integratedResult,
+                                    self.queryHelper(tail, branch, self.nodeInSchema(branch),
+                                        innerAggregate))
+            return integratedResult
+        # case 3: "parent" axes (/parent::para, /parent::node())
+        elif axis == "parent":
+            currentNodeName = "(root node)"
+            if acc:
+                currentNodeName = acc.pop(-1)
+                if name == "node()" or (acc != [] and acc[-1] == name):
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), innerAggregate)
+            return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
+        # case 4: "ancestor" and "ancestor-or-self" axes (/ancestor::div, /ancestor-or-self::div)
+        # (only returns the first ancestor (or self) due to pymongo restriction on path collision)
+        elif re.compile("ancestor.*").match(axis) is not None:
+            if axis == "ancestor-or-self" and (acc != [] and acc[-1] == name):
+                return self.queryHelper(tail, acc, currentNode.get(name), innerAggregate)
+            elif acc:
+                acc.pop(-1)  # strip current node from acc
+                if name in acc:
+                    while acc != [] and acc[-1] != name:
+                        acc.pop(-1)
+                    return self.queryHelper(tail, acc, self.nodeInSchema(acc), innerAggregate)
+            # all failing cases are collected here
+            return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
+                % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+        # case 5: "self" axes (/self::para, /self::node())
+        elif axis == "self":
+            if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
+                return self.queryHelper(tail, acc, currentNode, innerAggregate)
+            else:
+                return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
+                    % (acc[-1] if acc != [] else "(root node)", name)}
 
 
 if __name__ == "__main__":
@@ -652,6 +741,14 @@ if __name__ == "__main__":
         "/child::library/child::artists[child::artist/child::name<\"Wham!\"]", # 0
         "/child::library[child::year>1990]", # 1
         "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration" # 2
+        "/child::library/child::artists[not(child::artist/child::name>\"Kris Dayanti\") and child::artist/child::name=\"Anang Ashanty\"]" # new 3
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" or child::artist/child::name=\"Anang Ashanty\"]" # 4
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" | child::artist/child::name=\"Anang Ashanty\"]" # 5
+        "/child::library/descendant::song[self::song/child::title=\"Payam Island\"]/child::duration" # 6
+        "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration" # 7
+        "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration" # 8
+        "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration" # 9
+        "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]" # 10
     ]
 
     ################### Test for aggregate ############################
@@ -685,17 +782,18 @@ if __name__ == "__main__":
         "/library//title" # 0
     ]
 
-
     # test method 1: run a whole test set
     for xpath in axesTests:
         print("--------------------------------------------------\n")
         print("Input: ", xpath)
         for result in testHandler.query(xpath, withID=False):
             pprint(result)
+            # pprint(str(result).encode("GB18030"))
 
     # test method 2: run a single test in a test set
-    # xpath = aggregationTests[0]
+    # xpath = predicateTests[2]
     # print("--------------------------------------------------\n")
     # print("Input: ", xpath)
     # for result in testHandler.query(xpath, withID=False):
     #     pprint(result)
+    #     pprint(str(result).encode("GB18030"))
