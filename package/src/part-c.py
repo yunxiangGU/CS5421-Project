@@ -4,7 +4,6 @@ from pprint import pprint
 
 
 class XPathParser:
-
     def __init__(self, uri, dbname):
         self.client = pymongo.MongoClient(uri)
         self.db = self.client[dbname]
@@ -19,8 +18,7 @@ class XPathParser:
     def updateSchema(self, collection):
         sample = self.db[collection].find_one(projection={"_id": 0})
         if sample is None:
-            return {"success": 0, "message": "Collection %s is not in Database %s or is an empty collection."
-                                             % (collection, self.db.name)}
+            return {"success": 0, "message": "Collection %s is not in Database %s or is an empty collection." % (collection, self.db.name)}
         else:
             self.schema = self.buildSchema(sample)
             self.collection = collection
@@ -50,7 +48,7 @@ class XPathParser:
             if searchContext["aggregate"] == "count":
                 projection_value = list(searchContext.get("projections").keys())[0]
                 filter_pipe = {"$match": searchContext.get("filters")}
-                project_pipe = {"$project":{projection_value:1, "result":{"$cond": { "if": { "$isArray": '$'+projection_value }, "then": { "$size": '$'+projection_value }, "else": 1}}}}
+                project_pipe = {"$project": {projection_value: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                 result_pipe = {'$group': {'_id': withID, 'result': {'$sum': '$result'}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, project_pipe, result_pipe])
             else:
@@ -70,16 +68,16 @@ class XPathParser:
             except ValueError:
                 filter_value_value = list(filter_value.values())[0]
             if searchContext["predicateAggregate"] == "count":
-                add_field_pipe = {"$addFields":{"addedField":{"$cond":{ "if": { "$isArray": "$"+filter_key }, "then": { "$size": "$"+filter_key }, "else": 1}}}}
+                add_field_pipe = {"$addFields": {"addedField": {"$cond": {"if": {"$isArray": "$"+filter_key}, "then": {"$size": "$"+filter_key}, "else": 1}}}}
             else:
-                add_field_pipe = {"$addFields":{"addedField":{"$"+searchContext["predicateAggregate"]:"$"+filter_key}}}
-            match_pipe = {"$match":{"addedField":{filter_value_key:filter_value_value}}}
-            project_pipe = {"$project":{projection_value:1}}
+                add_field_pipe = {"$addFields": {"addedField": {"$"+searchContext["predicateAggregate"]: "$"+filter_key}}}
+            match_pipe = {"$match": {"addedField": {filter_value_key: filter_value_value}}}
+            project_pipe = {"$project": {projection_value: 1}}
 
             # xpath with aggregate functions in predicate and final
             if searchContext["innerAggregate"] != {}:
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
-                    pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$cond": { "if": { "$isArray": '$'+projection_value }, "then": { "$size": '$'+projection_value }, "else": 1}}}}
+                    pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                     # xpath with aggregate functions in outer
                     if searchContext["aggregate"] != "":
                         if searchContext["aggregate"] == "count":
@@ -91,7 +89,7 @@ class XPathParser:
                     else:
                         queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, pipe])
                 else:
-                    pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
+                    pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
                     # xpath with aggregate functions in outer
                     if searchContext["aggregate"] != "":
                         if searchContext["aggregate"] == "count":
@@ -126,11 +124,11 @@ class XPathParser:
                 queryResult = self.db[searchContext["collection"]].aggregate(pipe)
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match":searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")}
 
                 # xpath with aggregate functions in final
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
-                    pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$cond": { "if": { "$isArray": '$'+projection_value }, "then": { "$size": '$'+projection_value }, "else": 1}}}}
+                    pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                     if searchContext["aggregate"] != "":
                         if searchContext["aggregate"] == "count":
                             result_pipe = {'$group': {'_id': withID, 'result': {'$sum': 1}}}
@@ -139,11 +137,11 @@ class XPathParser:
                             result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$result'}}}
                             queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe, result_pipe])
                     else:
-                        print("query result: " + queryResult)
+                        print("unsupported query result")
 
                 # xpath without aggregate functions in final
                 else:
-                    pipe = {"$project":{searchContext['innerAggregate']["groupBy"]:1, "result":{"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
+                    pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
                     # xpath with aggregate functions in outer
                     if searchContext["aggregate"] != "":
                         if searchContext["aggregate"] == "count":
@@ -196,11 +194,11 @@ class XPathParser:
     def queryHelper(self, searchPath, acc, currentNode, filters, innerAggregate={}):
         if searchPath == "":
             accPath = ".".join(acc)
-            context = {"innerAggregate" : innerAggregate}
-            if not currentNode is dict:
+            context = {"innerAggregate": innerAggregate}
+            if currentNode is not dict:
                 context["unwind"] = {"$" + accPath: 1}
             if accPath != "":
-                context["projections"] = {accPath : 1}
+                context["projections"] = {accPath: 1}
                 # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
                 if "filters" in filters.keys():
                     context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], accPath)
@@ -221,23 +219,21 @@ class XPathParser:
                 for key in currentNode.keys():
                     branch = acc.copy()
                     branch.append(key)
-                    integratedResult = self.integrateResults(integratedResult,
-                                        self.queryHelper(tail, branch, currentNode[key], filters, innerAggregate))
+                    integratedResult = self.integrateResults(integratedResult, self.queryHelper(tail, branch, currentNode[key], filters, innerAggregate))
                 return integratedResult
             elif currentNode.get(name) is not None:
                 acc.append(name)
                 return self.queryHelper(tail, acc, currentNode[name], filters, innerAggregate)
             else:
-                return {"success": 0, "message": "Cannot find complete path %s"\
-                     % (" -> ".join(acc) + " -> " + name)}
+                return {"success": 0, "message": "Cannot find complete path %s" % (" -> ".join(acc) + " -> " + name)}
+
         # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para, /descendant-or-self::node()/child::para)
         elif re.compile("descendant.*").match(axis) is not None:
             omittedPaths = []
             self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
 
             # default return value with no matching result
-            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
-                                 % (acc[-1] if acc != [] else "(root node)", name)}
+            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s" % (acc[-1] if acc != [] else "(root node)", name)}
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
                 possibleResult = self.queryHelper(tail, acc, currentNode, filters, innerAggregate)
@@ -251,10 +247,9 @@ class XPathParser:
                     path.pop(-1)
                 branch = acc.copy()
                 branch.extend(path)
-                integratedResult = self.integrateResults(integratedResult,
-                                    self.queryHelper(tail, branch, self.nodeInSchema(branch),
-                                        filters, innerAggregate))
+                integratedResult = self.integrateResults(integratedResult, self.queryHelper(tail, branch, self.nodeInSchema(branch), filters, innerAggregate))
             return integratedResult
+
         # case 3: "parent" axes (/parent::para, /parent::node())
         elif axis == "parent":
             currentNodeName = "(root node)"
@@ -263,6 +258,7 @@ class XPathParser:
                 if name == "node()" or (acc != [] and acc[-1] == name):
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters, innerAggregate)
             return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
+
         # case 4: "ancestor" and "ancestor-or-self" axes (/ancestor::div, /ancestor-or-self::div)
         # (only returns the first ancestor (or self) due to pymongo restriction on path collision)
         elif re.compile("ancestor.*").match(axis) is not None:
@@ -275,19 +271,16 @@ class XPathParser:
                         acc.pop(-1)
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), filters, innerAggregate)
             # all failing cases are collected here
-            return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
-                % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+            return {"success": 0, "message": "Cannot find ancestor(%s) %s from %s" % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+
         # case 5: "self" axes (/self::para, /self::node())
         elif axis == "self":
             if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
                 return self.queryHelper(tail, acc, currentNode, filters, innerAggregate)
             else:
-                return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
-                    % (acc[-1] if acc != [] else "(root node)", name)}
+                return {"success": 0, "message": "current node %s cannot match with declared 'self' %s" % (acc[-1] if acc != [] else "(root node)", name)}
 
-
-    # ------------------------------helper functions-------------------------------------
-
+    # ------------------------------ helper functions ------------------------------------- #
     # build schema from "root" (dfs)
     def buildSchema(self, root):
         if root is None:
@@ -606,25 +599,25 @@ class XPathParser:
         pipe = []
         filter_pipe = []
         project_pipe = []
-        if searchContext.get("filters") != None:
+        if searchContext.get("filters") is not None:
             filter_pipe = [{"$match": searchContext.get("filters")}]
-        if searchContext.get("projections") != None:
+        if searchContext.get("projections") is not None:
             projected_fields = [{path.replace(".", "/"): "$" + path}
                                 for path in searchContext["projections"] if path != "_id"]
-            # project degsinated fields and try to unwind leaf nodes
-            if projected_fields != []:
+            # project designated fields and try to unwind leaf nodes
+            if projected_fields:
                 project_pipe = [{"$project": {"splittedFields": projected_fields,
-                                    "_id": searchContext["projections"]["_id"]
-                                        if searchContext.get("projections").get("_id") != None else 1}},
+                                              "_id": searchContext["projections"]["_id"]
+                                              if searchContext.get("projections").get("_id") is not None else 1}},
                                 {"$unwind": "$splittedFields"}]
                 project_pipe.extend([{"$unwind": {"path": "$splittedFields." + (list(path.keys()))[0], "preserveNullAndEmptyArrays": True}}
                                     for path in projected_fields])
                 project_pipe.extend([{"$addFields": {"splittedFields._id": "$_id"}},
                                     {"$replaceRoot": {"newRoot": "$splittedFields"}}])
         # project all fields for an empty but successful search
-        if project_pipe == []:
+        if not project_pipe:
             project_pipe = [{"$project": {"document": "$$ROOT"}},
-                            {"$replaceRoot": { "newRoot": "$document" }}]
+                            {"$replaceRoot": {"newRoot": "$document"}}]
 
         pipe.extend(filter_pipe)
         pipe.extend(project_pipe)
@@ -633,12 +626,12 @@ class XPathParser:
     def test(self, searchPath, acc, currentNode, innerAggregate={}):
         if searchPath == "":
             accPath = ".".join(acc)
-            context = {"innerAggregate" : innerAggregate}
-            if not currentNode is dict:
+            context = {"innerAggregate": innerAggregate}
+            if currentNode is not dict:
                 context["unwind"] = {"$" + accPath: 1}
             if accPath != "":
-                context["projections"] = {accPath : 1}
-            return context["projections"] # return {"success": 1, "message": context}
+                context["projections"] = {accPath: 1}
+            return context["projections"]  # return {"success": 1, "message": context}
 
         print("Search Path: ", searchPath)
 
@@ -653,23 +646,21 @@ class XPathParser:
                 for key in currentNode.keys():
                     branch = acc.copy()
                     branch.append(key)
-                    integratedResult = self.integrateResults(integratedResult,
-                                        self.queryHelper(tail, branch, currentNode[key], innerAggregate))
+                    integratedResult = self.integrateResults(integratedResult, self.queryHelper(tail, branch, currentNode[key], innerAggregate))
                 return integratedResult
             elif currentNode.get(name) is not None:
                 acc.append(name)
                 return self.queryHelper(tail, acc, currentNode[name], innerAggregate)
             else:
-                return {"success": 0, "message": "Cannot find complete path %s"\
-                     % (" -> ".join(acc) + " -> " + name)}
+                return {"success": 0, "message": "Cannot find complete path %s" % (" -> ".join(acc) + " -> " + name)}
+
         # case 2: "descendant" and "descendant-or-self" axes (/descendant::para, /descendant-or-self::para, /descendant-or-self::node()/child::para)
         elif re.compile("descendant.*").match(axis) is not None:
             omittedPaths = []
             self.findPaths(self.nodeInSchema(acc), name, -1, [], omittedPaths)
 
             # default return value with no matching result
-            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s"\
-                                 % (acc[-1] if acc != [] else "(root node)", name)}
+            integratedResult = {"success": 0, "message": "Cannot find indirect path %s ->> %s" % (acc[-1] if acc != [] else "(root node)", name)}
             # case 1: special case for "descendant-or-self"
             if axis == "descendant-or-self" and acc != [] and acc[-1] == name:
                 possibleResult = self.queryHelper(tail, acc, currentNode, innerAggregate)
@@ -683,10 +674,9 @@ class XPathParser:
                     path.pop(-1)
                 branch = acc.copy()
                 branch.extend(path)
-                integratedResult = self.integrateResults(integratedResult,
-                                    self.queryHelper(tail, branch, self.nodeInSchema(branch),
-                                        innerAggregate))
+                integratedResult = self.integrateResults(integratedResult, self.queryHelper(tail, branch, self.nodeInSchema(branch), innerAggregate))
             return integratedResult
+
         # case 3: "parent" axes (/parent::para, /parent::node())
         elif axis == "parent":
             currentNodeName = "(root node)"
@@ -695,6 +685,7 @@ class XPathParser:
                 if name == "node()" or (acc != [] and acc[-1] == name):
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), innerAggregate)
             return {"success": 0, "message": "Cannot find parent %s from %s" % (name, currentNodeName)}
+
         # case 4: "ancestor" and "ancestor-or-self" axes (/ancestor::div, /ancestor-or-self::div)
         # (only returns the first ancestor (or self) due to pymongo restriction on path collision)
         elif re.compile("ancestor.*").match(axis) is not None:
@@ -707,15 +698,14 @@ class XPathParser:
                         acc.pop(-1)
                     return self.queryHelper(tail, acc, self.nodeInSchema(acc), innerAggregate)
             # all failing cases are collected here
-            return {"success" : 0, "message" : "Cannot find ancestor(%s) %s from %s" \
-                % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+            return {"success": 0, "message": "Cannot find ancestor(%s) %s from %s" % ("exclusive" if axis == "ancestor" else "inclusive", name, acc[-1] if acc != [] else "(root node)")}
+
         # case 5: "self" axes (/self::para, /self::node())
         elif axis == "self":
             if name == "node()" or (acc == [] and name == self.collection) or (acc != [] and acc[-1] == name):
                 return self.queryHelper(tail, acc, currentNode, innerAggregate)
             else:
-                return {"success" : 0, "message" : "current node %s cannot match with declared 'self' %s" \
-                    % (acc[-1] if acc != [] else "(root node)", name)}
+                return {"success": 0, "message": "current node %s cannot match with declared 'self' %s" % (acc[-1] if acc != [] else "(root node)", name)}
 
 
 if __name__ == "__main__":
@@ -723,72 +713,73 @@ if __name__ == "__main__":
 
     axesTests = [
         "/child::library",  # 0 (child and descendants)
-        "/child::library/child::title/descendant-or-self::title", # 1
-        "/child::library/descendant-or-self::node()/child::title", # 2
-        "/child::library/descendant::artist/child::country", # 3
-        "/child::library/child::artists/descendant::country", # 4
-        "/child::library/child::songs/descendant::title/parent::node()", # 5 (parents and ancestors)
-        "/child::library/child::songs/descendant::title/parent::song", # 6
-        "/child::library/descendant::country/ancestor::artists", # 7
-        "/child::library/descendant::country/ancestor::country", # 8
-        "/child::library/descendant::artist/ancestor-or-self::artist", # 9
-        "/child::library/descendant::title", # 10 (unwind test)
-        "/child::library/descendant::song", # 11
-        "/child::library/descendant::songs" # 12
+        "/child::library/child::title/descendant-or-self::title",  # 1
+        "/child::library/descendant-or-self::node()/child::title",  # 2
+        "/child::library/descendant::artist/child::country",  # 3
+        "/child::library/child::artists/descendant::country",  # 4
+        "/child::library/child::songs/descendant::title/parent::node()",  # 5 (parents and ancestors)
+        "/child::library/child::songs/descendant::title/parent::song",  # 6
+        "/child::library/descendant::country/ancestor::artists",  # 7
+        "/child::library/descendant::country/ancestor::country",  # 8
+        "/child::library/descendant::artist/ancestor-or-self::artist",  # 9
+        "/child::library/descendant::title",  # 10 (unwind test)
+        "/child::library/descendant::song",  # 11
+        "/child::library/descendant::songs"  # 12
     ]
 
     predicateTests = [
-        "/child::library/child::artists[child::artist/child::name<\"Wham!\"]", # 0
-        "/child::library[child::year>1990]", # 1
-        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration" # 2
-        "/child::library/child::artists[not(child::artist/child::name>\"Kris Dayanti\") and child::artist/child::name=\"Anang Ashanty\"]" # new 3
-        "/child::library/child::artists[child::artist/child::name=\"Wham!\" or child::artist/child::name=\"Anang Ashanty\"]" # 4
-        "/child::library/child::artists[child::artist/child::name=\"Wham!\" | child::artist/child::name=\"Anang Ashanty\"]" # 5
-        "/child::library/descendant::song[self::song/child::title=\"Payam Island\"]/child::duration" # 6
-        "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration" # 7
-        "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration" # 8
-        "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration" # 9
-        "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]" # 10
+        "/child::library/child::artists[child::artist/child::name<\"Wham!\"]",  # 0
+        "/child::library[child::year>1990]",  # 1
+        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration"  # 2
+        "/child::library/child::artists[not(child::artist/child::name>\"Kris Dayanti\") and child::artist/child::name=\"Anang Ashanty\"]"  # 3
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" or child::artist/child::name=\"Anang Ashanty\"]"  # 4
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" | child::artist/child::name=\"Anang Ashanty\"]"  # 5
+        "/child::library/descendant::song[self::song/child::title=\"Payam Island\"]/child::duration"  # 6
+        "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration"  # 7
+        "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration"  # 8
+        "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration"  # 9
+        "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]"  # 10
     ]
 
-    ################### Test for aggregate ############################
+    # ------------------------- Test for aggregate ------------------------- #
     aggregationTests = [
-        "count(/child::library/descendant::song/child::title)", # 0
-        "sum(/child::library/descendant::year)", # 1
-        "avg(/child::library/descendant::year)", # 2
-        "min(/child::library/descendant::year)", # 3
-        "max(/child::library/descendant::year)", # 4
-        "/child::library/child::songs/count(child::song)", # 5
-        "count(/child::library/child::songs/count(child::song))", # 6
-        "max(/child::library/child::songs/count(child::song))", # 7
-        "/child::library/child::artists/max(child::artist/child::name)", # 8
-        "count(/child::library/child::artists/max(child::artist/child::age))", # 9
-        "max(/child::library/child::artists/max(child::artist/child::age))", # 10
-        "/child::library/child::artists[max(child::artist/child::age)>24]/child::artist", # 11
-        "/child::library/child::artists[count(child::artist)>0.5]/child::artist", # 12
-        "/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age)", # 13
-        "count(/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age))", # 14
-        "max(/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age))", # 15
-        "/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age)", # 16
-        "count(/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age))", # 17
-        "max(/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age))", # 18
-        "/child::library/child::artists[count(child::artist)>0]/child::artist/child::age", # 19
-        "count(/child::library/child::artists[count(child::artist)>0]/child::artist/child::age)", # 20
-        "max(/child::library/child::artists[count(child::artist)>0]/child::artist/child::age)" # 21
+        "count(/child::library/descendant::song/child::title)",  # 0
+        "sum(/child::library/descendant::year)",  # 1
+        "avg(/child::library/descendant::year)",  # 2
+        "min(/child::library/descendant::year)",  # 3
+        "max(/child::library/descendant::year)",  # 4
+        "/child::library/child::songs/count(child::song)",  # 5
+        "count(/child::library/child::songs/count(child::song))",  # 6
+        "max(/child::library/child::songs/count(child::song))",  # 7
+        "/child::library/child::artists/max(child::artist/child::name)",  # 8
+        "count(/child::library/child::artists/max(child::artist/child::age))",  # 9
+        "max(/child::library/child::artists/max(child::artist/child::age))",  # 10
+        "/child::library/child::artists[max(child::artist/child::age)>24]/child::artist",  # 11
+        "/child::library/child::artists[count(child::artist)>0.5]/child::artist",  # 12
+        "/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age)",  # 13
+        "count(/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age))",  # 14
+        "max(/child::library/child::artists[count(child::artist)>0]/sum(child::artist/child::age))",  # 15
+        "/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age)",  # 16
+        "count(/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age))",  # 17
+        "max(/child::library/child::artists[count(child::artist)>1]/count(child::artist/child::age))",  # 18
+        "/child::library/child::artists[count(child::artist)>0]/child::artist/child::age",  # 19
+        "count(/child::library/child::artists[count(child::artist)>0]/child::artist/child::age)",  # 20
+        "max(/child::library/child::artists[count(child::artist)>0]/child::artist/child::age)"  # 21
     ]
-    ################### Test for aggregate end ############################
+
+    # ------------------------- Test for aggregate end ------------------------- #
 
     shorthandTests = [
-        "/library//title" # 0
+        "/library//title"  # 0
     ]
 
     # test method 1: run a whole test set
-    for xpath in axesTests:
-        print("--------------------------------------------------\n")
-        print("Input: ", xpath)
-        for result in testHandler.query(xpath, withID=False):
-            pprint(result)
-            # pprint(str(result).encode("GB18030"))
+    # for xpath in axesTests:
+    #     print("--------------------------------------------------\n")
+    #     print("Input: ", xpath)
+    #     for result in testHandler.query(xpath, withID=False):
+    #         pprint(result)
+    #         pprint(str(result).encode("GB18030"))
 
     # test method 2: run a single test in a test set
     # xpath = predicateTests[2]
