@@ -47,13 +47,13 @@ class XPathParser:
         if searchContext["aggregate"] != "" and searchContext["predicateAggregate"] == "" and searchContext["innerAggregate"] == {}:
             if searchContext["aggregate"] == "count":
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
                 project_pipe = {"$project": {projection_value: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                 result_pipe = {'$group': {'_id': withID, 'result': {'$sum': '$result'}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, project_pipe, result_pipe])
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
                 result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, result_pipe])
 
@@ -105,18 +105,23 @@ class XPathParser:
             else:
                 # xpath with aggregate functions in predicate and not in final and in outer
                 if searchContext["aggregate"] != "":
+                    final_value = projection_value.split(".")[-1]
+                    project_pipe = {"$project": {"result": "$"+projection_value}}
+                    unwind_pipe = {"$unwind":"$"+"result"}
                     if searchContext["aggregate"] == "count":
-                        result_pipe = {'$group': {'_id': withID, 'result': {'$sum': 1}}}
+                        result_pipe = {'$group': {'_id': None, 'result': {'$sum': 1}}}
                     else:
-                        result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
-                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, result_pipe])
+                        result_pipe = {'$group': {'_id': None, 'result': {'$' + searchContext["aggregate"]: '$' + 'result'}}}
+                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe, result_pipe])
                 # xpath with aggregate functions in predicate and not in final and not in outer
                 else:
-                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe])
+                    final_value = projection_value.split(".")[-1]
+                    project_pipe = {"$project": {"result": "$"+projection_value}}
+                    unwind_pipe = {"$unwind":"$"+"result"}
+                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe])
 
         # case 3: xpath without aggregate functions in predicate
         else:
-            # only considers "child" and "descendant" axes for now
             # xpath without any aggregate functions
             if searchContext["innerAggregate"] == {}:
                 pipe = self.generateBasicPipe(searchContext)
@@ -124,9 +129,9 @@ class XPathParser:
                 queryResult = self.db[searchContext["collection"]].aggregate(pipe)
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
 
-                # xpath with aggregate functions in final
+                # xpath with count aggregate functions in final 
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
                     pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                     if searchContext["aggregate"] != "":
@@ -137,9 +142,9 @@ class XPathParser:
                             result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$result'}}}
                             queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe, result_pipe])
                     else:
-                        print("unsupported query result")
+                        queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe])
 
-                # xpath without aggregate functions in final
+                # xpath with other aggregate functions in final
                 else:
                     pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
                     # xpath with aggregate functions in outer
@@ -788,3 +793,10 @@ if __name__ == "__main__":
     # for result in testHandler.query(xpath, withID=False):
     #     pprint(result)
     #     pprint(str(result).encode("GB18030"))
+
+    # run all aggregation tests
+    for xpath in aggregationTests:
+        print("--------------------------------------------------\n")
+        print("Input: ", xpath)
+        for result in testHandler.query(xpath, withID=False):
+            pprint(result['result'])
