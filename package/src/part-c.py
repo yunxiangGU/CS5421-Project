@@ -31,6 +31,16 @@ class XPathParser:
         if not self.check_is_full_syntax(s):
             s = self.translate_to_full_syntax(s)
         print("***query: ", s)
+        # check whether the query contains "attribute"
+        isInvalidQuery = False
+        if s.find("attribute") == 0:
+            isInvalidQuery = True
+        elif s.find("attribute") > 0:
+            ind = s.find("attribute")
+            if not s[ind-1].isalpha() and not s[ind+9].isalpha():
+                isInvalidQuery = True
+        if isInvalidQuery:
+            return [{"success": 0, "message": "The input query contains \"attribute\", which MongoDB do not support"}]
         generationResult = self.generateSearch(s)
         # return error message
         if generationResult["success"] == 0:
@@ -47,13 +57,13 @@ class XPathParser:
         if searchContext["aggregate"] != "" and searchContext["predicateAggregate"] == "" and searchContext["innerAggregate"] == {}:
             if searchContext["aggregate"] == "count":
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
                 project_pipe = {"$project": {projection_value: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                 result_pipe = {'$group': {'_id': withID, 'result': {'$sum': '$result'}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, project_pipe, result_pipe])
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
                 result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
                 queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, result_pipe])
 
@@ -105,18 +115,23 @@ class XPathParser:
             else:
                 # xpath with aggregate functions in predicate and not in final and in outer
                 if searchContext["aggregate"] != "":
+                    final_value = projection_value.split(".")[-1]
+                    project_pipe = {"$project": {"result": "$"+projection_value}}
+                    unwind_pipe = {"$unwind":"$"+"result"}
                     if searchContext["aggregate"] == "count":
-                        result_pipe = {'$group': {'_id': withID, 'result': {'$sum': 1}}}
+                        result_pipe = {'$group': {'_id': None, 'result': {'$sum': 1}}}
                     else:
-                        result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$' + projection_value}}}
-                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, result_pipe])
+                        result_pipe = {'$group': {'_id': None, 'result': {'$' + searchContext["aggregate"]: '$' + 'result'}}}
+                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe, result_pipe])
                 # xpath with aggregate functions in predicate and not in final and not in outer
                 else:
-                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe])
+                    final_value = projection_value.split(".")[-1]
+                    project_pipe = {"$project": {"result": "$"+projection_value}}
+                    unwind_pipe = {"$unwind":"$"+"result"}
+                    queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe])
 
         # case 3: xpath without aggregate functions in predicate
         else:
-            # only considers "child" and "descendant" axes for now
             # xpath without any aggregate functions
             if searchContext["innerAggregate"] == {}:
                 pipe = self.generateBasicPipe(searchContext)
@@ -124,9 +139,9 @@ class XPathParser:
                 queryResult = self.db[searchContext["collection"]].aggregate(pipe)
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
-                filter_pipe = {"$match": searchContext.get("filters")}
+                filter_pipe = {"$match": searchContext.get("filters")} if searchContext.get("filters") is not None else {"$match": {}} 
 
-                # xpath with aggregate functions in final
+                # xpath with count aggregate functions in final 
                 if searchContext['innerAggregate']["innerAggregateFunction"] == "count":
                     pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$cond": {"if": {"$isArray": '$'+projection_value}, "then": {"$size": '$'+projection_value}, "else": 1}}}}
                     if searchContext["aggregate"] != "":
@@ -137,9 +152,9 @@ class XPathParser:
                             result_pipe = {'$group': {'_id': withID, 'result': {'$' + searchContext["aggregate"]: '$result'}}}
                             queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe, result_pipe])
                     else:
-                        print("unsupported query result")
+                        queryResult = self.db[searchContext["collection"]].aggregate([filter_pipe, pipe])
 
-                # xpath without aggregate functions in final
+                # xpath with other aggregate functions in final
                 else:
                     pipe = {"$project": {searchContext['innerAggregate']["groupBy"]: 1, "result": {"$"+searchContext['innerAggregate']["innerAggregateFunction"]: '$'+projection_value}}}
                     # xpath with aggregate functions in outer
@@ -201,7 +216,7 @@ class XPathParser:
                 context["projections"] = {accPath: 1}
             # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
             if "filters" in filters.keys():
-                context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], accPath)
+                context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], acc)
             return {"success": 1, "message": context}
         print("Search Path: ", searchPath)
         splittedPath = self.splitAggregateFunction(searchPath)
@@ -388,7 +403,7 @@ class XPathParser:
         return splitResult
 
     # parse the filter conditions including 'and', 'or', 'not()', and other logic operators, result in dictionary format
-    def predicateHelper(self, predicate, prevNode, accPath):
+    def predicateHelper(self, predicate, prevNode, acc):
         operatorSet = {}
         res = []
         notFlag = False
@@ -414,7 +429,14 @@ class XPathParser:
                 if "not(" in predicate:
                     notFlag = True
                     predicate = predicate[4:-1]
-                prevPath = accPath[:(accPath.rfind(prevNode)+len(prevNode))]
+                # find the path as a list before predicate takes place
+                prevPath = acc.copy()
+                if prevNode in prevPath:
+                    while prevPath != [] and prevPath[-1] != prevNode:
+                        prevPath.pop(-1)
+                else:
+                    prevPath.extend(self.findPathFromNode(self.nodeInSchema(prevPath), prevNode))
+                print("+++ test prev path: ", prevPath)
 
                 if ">=" in predicate:
                     operator = ">="
@@ -433,12 +455,9 @@ class XPathParser:
 
                 if len(operator) > 0:
 
-                    splittedPrevPath = []
-                    if prevPath != "":
-                        splittedPrevPath = prevPath.split(".")
-                    schemaNow = self.nodeInSchema(splittedPrevPath)
+                    schemaNow = self.nodeInSchema(prevPath)
 
-                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', splittedPrevPath, schemaNow)["message"]["projections"].keys())[0]
+                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', prevPath, schemaNow)["message"]["projections"].keys())[0]
                     predicateValue = predicate.split(operator)[1]
                     # quote checks
                     if '\'' in predicateValue or '\"' in predicateValue:
@@ -505,8 +524,20 @@ class XPathParser:
             if sample is None:
                 break
             if p != "":
-                sample = sample[p]
+                sample = sample.get(p)
         return sample
+
+    # used in predicateHelper, try to find prevNode (named "tar") from the path indicated by acc (node)
+    def findPathFromNode(self, node, tar):
+        if node is None or type(node) is not dict:
+            return []
+        for key in node.keys():
+            if key == tar:
+                return [tar]
+            result = self.findPathFromNode(node.get(key), tar)
+            if result != []:
+                return [key] + result
+        return []
 
     # find a path to "name" starting from "root" (exclusive), picking the first "num" paths
     # if num == -1, record all the paths in "paths", otherwise record the "num"th path only.
@@ -564,9 +595,20 @@ class XPathParser:
             start += 1
 
         while start < len(query):
-            if query[start] == "/" and query[start + 1].isalpha():
-                result += "/child::"
-                start += 1
+            if query[start] == "/" and query[start+1].isalpha():
+                if not self.check_in_keyword_set(query, start+1):
+                    result += "/child::"
+                    start += 1
+                else:
+                    result += query[start]
+                    start += 1
+            if query[start] == "(" and query[start+1].isalpha():
+                if not self.check_in_keyword_set(query, start+1):
+                    result += "(child::"
+                    start += 1
+                else:
+                    result += query[start]
+                    start += 1
             elif query[start] == "/" and query[start + 1] == "/":
                 result += "/descendant-or-self::node()/child::"
                 start += 2
@@ -778,7 +820,21 @@ if __name__ == "__main__":
     # ------------------------- Test for aggregate end ------------------------- #
 
     shorthandTests = [
-        "/library//title"  # 0
+        "/library//title",  # 0
+        "/library//artist/name",  # 1
+        "/library[year>1990]", #2
+        "/library//artist[name='Job Bunjob Pholin']/name", # 3
+        "/library//artist[name='Job Bunjob Pholin']/..", # 4 current get error, wait for zhl fix
+        "count(/library//song/title)", # 5
+        "/library/songs/count(song)", # 6
+        "count(/library/songs/count(song))", # 7
+        "/library/songs//title/..", # 8
+        "/library/songs//title/../../..", # 9
+        "/library/songs//title/./..", #10
+    ]
+
+    attributeTests = [
+        "/child::library/child::artists[attribute::country=25]/descendant::country" # 0
     ]
 
     # test method 1: run a whole test set
@@ -796,3 +852,24 @@ if __name__ == "__main__":
     for result in testHandler.query(xpath, withID=False):
         pprint(result)
         # pprint(str(result).encode("GB18030"))
+
+    # run all aggregation tests
+    # for xpath in aggregationTests:
+    #     print("--------------------------------------------------\n")
+    #     print("Input: ", xpath)
+    #     for result in testHandler.query(xpath, withID=False):
+    #         pprint(result['result'])
+    
+    # # run all attribute tests
+    # for xpath in attributeTests:
+    #     print("--------------------------------------------------\n")
+    #     print("Input: ", xpath)
+    #     for result in testHandler.query(xpath, withID=False):
+    #         pprint(result)
+    
+    # # run all shorthand tests
+    # for xpath in shorthandTests:
+    #     print("--------------------------------------------------\n")
+    #     print("Input: ", xpath)
+    #     for result in testHandler.query(xpath, withID=False):
+    #         pprint(result)
