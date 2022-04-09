@@ -199,9 +199,9 @@ class XPathParser:
                 context["unwind"] = {"$" + accPath: 1}
             if accPath != "":
                 context["projections"] = {accPath: 1}
-                # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
-                if "filters" in filters.keys():
-                    context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], accPath)
+            # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
+            if "filters" in filters.keys():
+                context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], accPath)
             return {"success": 1, "message": context}
         print("Search Path: ", searchPath)
         splittedPath = self.splitAggregateFunction(searchPath)
@@ -433,14 +433,21 @@ class XPathParser:
 
                 if len(operator) > 0:
 
-                    schemaNow = self.schema
-                    for each in prevPath.split("."):
-                        schemaNow = schemaNow.get(each)
+                    splittedPrevPath = []
+                    if prevPath != "":
+                        splittedPrevPath = prevPath.split(".")
+                    schemaNow = self.nodeInSchema(splittedPrevPath)
 
-                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', prevPath.split("."), schemaNow)["message"]["projections"].keys())[0]
+                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', splittedPrevPath, schemaNow)["message"]["projections"].keys())[0]
                     predicateValue = predicate.split(operator)[1]
+                    # quote checks
                     if '\'' in predicateValue or '\"' in predicateValue:
                         predicateValue = predicateValue[1: -1]
+                    # numeric value check
+                    try:
+                        predicateValue = float(predicateValue)
+                    except ValueError:
+                        pass
                     if operator == ">=":
                         if notFlag:
                             res.append({predicateKey: {'$not': {'$gte': predicateValue}}})
@@ -497,7 +504,8 @@ class XPathParser:
         for p in path:
             if sample is None:
                 break
-            sample = sample[p]
+            if p != "":
+                sample = sample[p]
         return sample
 
     # find a path to "name" starting from "root" (exclusive), picking the first "num" paths
@@ -779,12 +787,12 @@ if __name__ == "__main__":
     #     print("Input: ", xpath)
     #     for result in testHandler.query(xpath, withID=False):
     #         pprint(result)
-    #         pprint(str(result).encode("GB18030"))
+    #         # pprint(str(result).encode("GB18030"))
 
     # test method 2: run a single test in a test set
-    # xpath = predicateTests[2]
-    # print("--------------------------------------------------\n")
-    # print("Input: ", xpath)
-    # for result in testHandler.query(xpath, withID=False):
-    #     pprint(result)
-    #     pprint(str(result).encode("GB18030"))
+    xpath = predicateTests[1]
+    print("--------------------------------------------------\n")
+    print("Input: ", xpath)
+    for result in testHandler.query(xpath, withID=False):
+        pprint(result)
+        # pprint(str(result).encode("GB18030"))
