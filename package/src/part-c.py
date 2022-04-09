@@ -216,7 +216,7 @@ class XPathParser:
                 context["projections"] = {accPath: 1}
             # Call predicateHelper to parse the filter conditions, separating this part from queryHelper
             if "filters" in filters.keys():
-                context["filters"] = self.predicateHelper(filters["filters"], filters["prevNode"], acc)
+                context["filters"], context["filterGrain"] = self.predicateHelper(filters["filters"], filters["prevNode"], acc)
             return {"success": 1, "message": context}
         print("Search Path: ", searchPath)
         splittedPath = self.splitAggregateFunction(searchPath)
@@ -407,6 +407,7 @@ class XPathParser:
         operatorSet = {}
         res = []
         notFlag = False
+        filterGrain = {}
 
         if " and " in predicate:
             predicate = predicate.split(" and ")
@@ -456,8 +457,12 @@ class XPathParser:
 
                     schemaNow = self.nodeInSchema(prevPath)
 
-                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', prevPath, schemaNow)["message"]["projections"].keys())[0]
+                    predicateKey = list(self.test(predicate.split(operator)[0] + '/', prevPath.copy(), schemaNow)["message"]["projections"].keys())[0]
                     predicateValue = predicate.split(operator)[1]
+
+                    # used for splitting attributes from matching document
+                    filterGrain[predicateKey] = ".".join(prevPath)
+
                     # quote checks
                     if '\'' in predicateValue or '\"' in predicateValue:
                         predicateValue = predicateValue[1: -1]
@@ -514,7 +519,7 @@ class XPathParser:
             else:
                 filters.update({'$or': res})
 
-        return filters
+        return (filters, filterGrain)
 
     # find the root element in a sample document down the "path"
     def nodeInSchema(self, path):
@@ -652,10 +657,10 @@ class XPathParser:
             # step 1: find out documents that satisfies the matches
             filter_pipe = [{"$match": searchContext.get("filters")}]
             for key, val in searchContext.get("filters").items():
-                lastDot = key.rfind(".")
-                if lastDot != -1:
-                    filter_pipe.append({'$unwind': {'path': '$' + key[:lastDot], 'preserveNullAndEmptyArrays': True}})
-                    filter_pipe.append({'$match': {key: val}})
+                if searchContext.get("filterGrain") and searchContext.get("filterGrain").get(key):
+                    grain = searchContext.get("filterGrain").get(key)
+                    filter_pipe.append({'$unwind': {'path': '$' + grain, 'preserveNullAndEmptyArrays': True}})
+                filter_pipe.append({'$match': {key: val}})
         if searchContext.get("projections") is not None:
             projected_fields = [{path.replace(".", "/"): "$" + path}
                                 for path in searchContext["projections"] if path != "_id"]
@@ -793,7 +798,8 @@ if __name__ == "__main__":
         "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration",  # 7
         "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration",  # 8
         "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration",  # 9
-        "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]"  # 10
+        "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]",  # 10
+        "/child::library/child::songs[descendant::title=\"Payam Island\"]/descendant::title" # 11
     ]
 
     # ------------------------- Test for aggregate ------------------------- #
@@ -851,7 +857,7 @@ if __name__ == "__main__":
             # pprint(str(result).encode("GB18030"))
 
     # test method 2: run a single test in a test set
-    # xpath = predicateTests[2]
+    # xpath = predicateTests[11]
     # print("--------------------------------------------------\n")
     # print("Input: ", xpath)
     # for result in testHandler.query(xpath, withID=True):
