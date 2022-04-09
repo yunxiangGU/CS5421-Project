@@ -436,7 +436,6 @@ class XPathParser:
                         prevPath.pop(-1)
                 else:
                     prevPath.extend(self.findPathFromNode(self.nodeInSchema(prevPath), prevNode))
-                print("+++ test prev path: ", prevPath)
 
                 if ">=" in predicate:
                     operator = ">="
@@ -650,7 +649,13 @@ class XPathParser:
         filter_pipe = []
         project_pipe = []
         if searchContext.get("filters") is not None:
+            # step 1: find out documents that satisfies the matches
             filter_pipe = [{"$match": searchContext.get("filters")}]
+            for key, val in searchContext.get("filters").items():
+                lastDot = key.rfind(".")
+                if lastDot != -1:
+                    filter_pipe.append({'$unwind': {'path': '$' + key[:lastDot], 'preserveNullAndEmptyArrays': True}})
+                    filter_pipe.append({'$match': {key: val}})
         if searchContext.get("projections") is not None:
             projected_fields = [{path.replace(".", "/"): "$" + path}
                                 for path in searchContext["projections"] if path != "_id"]
@@ -780,14 +785,14 @@ if __name__ == "__main__":
     predicateTests = [
         "/child::library/child::artists[child::artist/child::name<\"Wham!\"]",  # 0
         "/child::library[child::year>1990]",  # 1
-        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration"  # 2
-        "/child::library/child::artists[not(child::artist/child::name>\"Kris Dayanti\") and child::artist/child::name=\"Anang Ashanty\"]"  # 3
-        "/child::library/child::artists[child::artist/child::name=\"Wham!\" or child::artist/child::name=\"Anang Ashanty\"]"  # 4
-        "/child::library/child::artists[child::artist/child::name=\"Wham!\" | child::artist/child::name=\"Anang Ashanty\"]"  # 5
-        "/child::library/descendant::song[self::song/child::title=\"Payam Island\"]/child::duration"  # 6
-        "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration"  # 7
-        "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration"  # 8
-        "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration"  # 9
+        "/child::library/descendant::song/self::song[child::title=\"Payam Island\"]/child::duration",  # 2
+        "/child::library/child::artists[not(child::artist/child::name>\"Kris Dayanti\") and child::artist/child::name=\"Anang Ashanty\"]",  # 3
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" or child::artist/child::name=\"Anang Ashanty\"]",  # 4
+        "/child::library/child::artists[child::artist/child::name=\"Wham!\" | child::artist/child::name=\"Anang Ashanty\"]",  # 5
+        "/child::library/descendant::song[self::song/child::title=\"Payam Island\"]/child::duration",  # 6
+        "/child::library/descendant::song/self::song[descendant-or-self::title=\"Payam Island\"]/child::duration",  # 7
+        "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration",  # 8
+        "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration",  # 9
         "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]"  # 10
     ]
 
@@ -838,20 +843,20 @@ if __name__ == "__main__":
     ]
 
     # test method 1: run a whole test set
-    # for xpath in axesTests:
-    #     print("--------------------------------------------------\n")
-    #     print("Input: ", xpath)
-    #     for result in testHandler.query(xpath, withID=False):
-    #         pprint(result)
-    #         # pprint(str(result).encode("GB18030"))
+    for xpath in axesTests:
+        print("--------------------------------------------------\n")
+        print("Input: ", xpath)
+        for result in testHandler.query(xpath, withID=False):
+            pprint(result)
+            # pprint(str(result).encode("GB18030"))
 
     # test method 2: run a single test in a test set
-    xpath = predicateTests[1]
-    print("--------------------------------------------------\n")
-    print("Input: ", xpath)
-    for result in testHandler.query(xpath, withID=False):
-        pprint(result)
-        # pprint(str(result).encode("GB18030"))
+    # xpath = predicateTests[2]
+    # print("--------------------------------------------------\n")
+    # print("Input: ", xpath)
+    # for result in testHandler.query(xpath, withID=True):
+    #     pprint(result)
+    #     # pprint(str(result).encode("GB18030"))
 
     # run all aggregation tests
     # for xpath in aggregationTests:
