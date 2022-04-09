@@ -571,9 +571,20 @@ class XPathParser:
             start += 1
 
         while start < len(query):
-            if query[start] == "/" and query[start + 1].isalpha():
-                result += "/child::"
-                start += 1
+            if query[start] == "/" and query[start+1].isalpha():
+                if not self.check_in_keyword_set(query, start+1):
+                    result += "/child::"
+                    start += 1
+                else:
+                    result += query[start]
+                    start += 1
+            if query[start] == "(" and query[start+1].isalpha():
+                if not self.check_in_keyword_set(query, start+1):
+                    result += "(child::"
+                    start += 1
+                else:
+                    result += query[start]
+                    start += 1
             elif query[start] == "/" and query[start + 1] == "/":
                 result += "/descendant-or-self::node()/child::"
                 start += 2
@@ -785,7 +796,17 @@ if __name__ == "__main__":
     # ------------------------- Test for aggregate end ------------------------- #
 
     shorthandTests = [
-        "/library//title"  # 0
+        "/library//title",  # 0
+        "/library//artist/name",  # 1
+        "/library[year>1990]", #2
+        "/library//artist[name='Job Bunjob Pholin']/name", # 3
+        "/library//artist[name='Job Bunjob Pholin']/..", # 4 current get error, wait for zhl fix
+        "count(/library//song/title)", # 5
+        "/library/songs/count(song)", # 6
+        "count(/library/songs/count(song))", # 7
+        "/library/songs//title/..", # 8
+        "/library/songs//title/../../..", # 9
+        "/library/songs//title/./..", #10
     ]
 
     attributeTests = [
@@ -817,6 +838,13 @@ if __name__ == "__main__":
     
     # run all attribute tests
     for xpath in attributeTests:
+        print("--------------------------------------------------\n")
+        print("Input: ", xpath)
+        for result in testHandler.query(xpath, withID=False):
+            pprint(result)
+    
+    # run all shorthand tests
+    for xpath in shorthandTests:
         print("--------------------------------------------------\n")
         print("Input: ", xpath)
         for result in testHandler.query(xpath, withID=False):
