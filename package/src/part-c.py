@@ -117,7 +117,7 @@ class XPathParser:
                 if searchContext["aggregate"] != "":
                     final_value = projection_value.split(".")[-1]
                     project_pipe = {"$project": {"result": "$"+projection_value}}
-                    unwind_pipe = {"$unwind":"$"+"result"}
+                    unwind_pipe = {"$unwind": "$"+"result"}
                     if searchContext["aggregate"] == "count":
                         result_pipe = {'$group': {'_id': None, 'result': {'$sum': 1}}}
                     else:
@@ -127,7 +127,7 @@ class XPathParser:
                 else:
                     final_value = projection_value.split(".")[-1]
                     project_pipe = {"$project": {"result": "$"+projection_value}}
-                    unwind_pipe = {"$unwind":"$"+"result"}
+                    unwind_pipe = {"$unwind": "$"+"result"}
                     queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe])
 
         # case 3: xpath without aggregate functions in predicate
@@ -535,7 +535,7 @@ class XPathParser:
             if key == tar:
                 return [tar]
             result = self.findPathFromNode(node.get(key), tar)
-            if result != []:
+            if result:
                 return [key] + result
         return []
 
@@ -822,19 +822,19 @@ if __name__ == "__main__":
     shorthandTests = [
         "/library//title",  # 0
         "/library//artist/name",  # 1
-        "/library[year>1990]", #2
-        "/library//artist[name='Job Bunjob Pholin']/name", # 3
-        "/library//artist[name='Job Bunjob Pholin']/..", # 4 current get error, wait for zhl fix
-        "count(/library//song/title)", # 5
-        "/library/songs/count(song)", # 6
-        "count(/library/songs/count(song))", # 7
-        "/library/songs//title/..", # 8
-        "/library/songs//title/../../..", # 9
-        "/library/songs//title/./..", #10
+        "/library[year>1990]",  # 2
+        "/library//artist[name='Job Bunjob Pholin']/name",  # 3
+        "/library//artist[name='Job Bunjob Pholin']/..",  # 4 current get error, wait for zhl fix
+        "count(/library//song/title)",  # 5
+        "/library/songs/count(song)",  # 6
+        "count(/library/songs/count(song))",  # 7
+        "/library/songs//title/..",  # 8
+        "/library/songs//title/../../..",  # 9
+        "/library/songs//title/./..",  # 10
     ]
 
     attributeTests = [
-        "/child::library/child::artists[attribute::country=25]/descendant::country" # 0
+        "/child::library/child::artists[attribute::country=25]/descendant::country"  # 0
     ]
 
     # test method 1: run a whole test set
