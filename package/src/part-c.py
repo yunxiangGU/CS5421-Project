@@ -843,7 +843,7 @@ if __name__ == "__main__":
     ]
 
     # test method 1: run a whole test set
-    for xpath in axesTests:
+    for xpath in predicateTests:
         print("--------------------------------------------------\n")
         print("Input: ", xpath)
         for result in testHandler.query(xpath, withID=False):
