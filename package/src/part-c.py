@@ -31,6 +31,16 @@ class XPathParser:
         if not self.check_is_full_syntax(s):
             s = self.translate_to_full_syntax(s)
         print("***query: ", s)
+        # check whether the query contains "attribute"
+        isInvalidQuery = False
+        if s.find("attribute") == 0:
+            isInvalidQuery = True
+        elif s.find("attribute") > 0:
+            ind = s.find("attribute")
+            if not s[ind-1].isalpha() and not s[ind+9].isalpha():
+                isInvalidQuery = True
+        if isInvalidQuery:
+            return [{"success": 0, "message": "The input query contains \"attribute\", which MongoDB do not support"}]
         generationResult = self.generateSearch(s)
         # return error message
         if generationResult["success"] == 0:
@@ -778,6 +788,10 @@ if __name__ == "__main__":
         "/library//title"  # 0
     ]
 
+    attributeTests = [
+        "/child::library/child::artists[attribute::country=25]/descendant::country" # 0
+    ]
+
     # test method 1: run a whole test set
     # for xpath in axesTests:
     #     print("--------------------------------------------------\n")
@@ -800,3 +814,10 @@ if __name__ == "__main__":
         print("Input: ", xpath)
         for result in testHandler.query(xpath, withID=False):
             pprint(result['result'])
+    
+    # run all attribute tests
+    for xpath in attributeTests:
+        print("--------------------------------------------------\n")
+        print("Input: ", xpath)
+        for result in testHandler.query(xpath, withID=False):
+            pprint(result)
