@@ -6,3 +6,7 @@
 .idea/modules.xml
 
 venv/
+
+# package related folders and files
+dist/
+*.egg-info

@@ -30,7 +30,7 @@ class XPathParser:
     def query(self, s, withID=True):
         if not self.check_is_full_syntax(s):
             s = self.translate_to_full_syntax(s)
-        print("***query: ", s)
+        # print("***query: ", s)
         # check whether the query contains "attribute"
         isInvalidQuery = False
         if s.find("attribute") == 0:
@@ -51,7 +51,7 @@ class XPathParser:
             if searchContext.get("projections") is None:
                 searchContext["projections"] = {}
             searchContext["projections"]["_id"] = 0
-        print("Search Context: ", searchContext)
+        # print("Search Context: ", searchContext)
 
         # case 1: xpath with only outer aggregate functions
         if searchContext["aggregate"] != "" and searchContext["predicateAggregate"] == "" and searchContext["innerAggregate"] == {}:
@@ -135,7 +135,7 @@ class XPathParser:
             # xpath without any aggregate functions
             if searchContext["innerAggregate"] == {}:
                 pipe = self.generateBasicPipe(searchContext)
-                print("***pipe: ", pipe)
+                # print("***pipe: ", pipe)
                 queryResult = self.db[searchContext["collection"]].aggregate(pipe)
             else:
                 projection_value = list(searchContext.get("projections").keys())[0]
@@ -218,7 +218,7 @@ class XPathParser:
             if "filters" in filters.keys():
                 context["filters"], context["filterGrain"] = self.predicateHelper(filters["filters"], filters["prevNode"], acc)
             return {"success": 1, "message": context}
-        print("Search Path: ", searchPath)
+        # print("Search Path: ", searchPath)
         splittedPath = self.splitAggregateFunction(searchPath)
         if splittedPath["aggregate"] != "":
             innerAggregate = {"innerAggregateFunction": splittedPath["aggregate"], "groupBy": acc[-1]}
@@ -364,7 +364,7 @@ class XPathParser:
 
     # split the filter conditions in '[]' at the very beginning of pipeline, keeping the aggregate split function intact
     def splitFilterFunction(self, s):
-        print("***query: ", s)
+        # print("***query: ", s)
         splitResult = {}
 
         idxOpeningBracket = -1
@@ -399,7 +399,7 @@ class XPathParser:
                 splitResult["predicateAggregate"] = aggregateSplit[0]
                 splitResult["filters"] = "".join(aggregateSplit[1:])
 
-        print("***splitResult: ", splitResult)
+        # print("***splitResult: ", splitResult)
         return splitResult
 
     # parse the filter conditions including 'and', 'or', 'not()', and other logic operators, result in dictionary format
@@ -693,7 +693,7 @@ class XPathParser:
                 context["projections"] = {accPath: 1}
             return context["projections"]  # return {"success": 1, "message": context}
 
-        print("Search Path: ", searchPath)
+        # print("Search Path: ", searchPath)
 
         head, tail = searchPath.split("/", 1)
         axis, name = head.split("::")
@@ -845,11 +845,12 @@ if __name__ == "__main__":
     ]
 
     attributeTests = [
-        "/child::library/child::artists[attribute::country=25]/descendant::country"  # 0
+        "/child::library/child::artists[attribute::country=25]/descendant::country",  # 0
+        "/library/artists[@country=25]//country" # 1
     ]
 
     # test method 1: run a whole test set
-    for xpath in predicateTests:
+    for xpath in attributeTests:
         print("--------------------------------------------------\n")
         print("Input: ", xpath)
         for result in testHandler.query(xpath, withID=False):
@@ -863,24 +864,3 @@ if __name__ == "__main__":
     # for result in testHandler.query(xpath, withID=True):
     #     pprint(result)
     #     # pprint(str(result).encode("GB18030"))
-
-    # run all aggregation tests
-    # for xpath in aggregationTests:
-    #     print("--------------------------------------------------\n")
-    #     print("Input: ", xpath)
-    #     for result in testHandler.query(xpath, withID=False):
-    #         pprint(result['result'])
-    
-    # # run all attribute tests
-    # for xpath in attributeTests:
-    #     print("--------------------------------------------------\n")
-    #     print("Input: ", xpath)
-    #     for result in testHandler.query(xpath, withID=False):
-    #         pprint(result)
-    
-    # # run all shorthand tests
-    # for xpath in shorthandTests:
-    #     print("--------------------------------------------------\n")
-    #     print("Input: ", xpath)
-    #     for result in testHandler.query(xpath, withID=False):
-    #         pprint(result)
