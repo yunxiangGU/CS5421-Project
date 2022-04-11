@@ -115,7 +115,7 @@ class XPathParser:
             else:
                 # xpath with aggregate functions in predicate and not in final and in outer
                 if searchContext["aggregate"] != "":
-                    final_value = projection_value.split(".")[-1]
+                    # final_value = projection_value.split(".")[-1]
                     project_pipe = {"$project": {"result": "$"+projection_value}}
                     unwind_pipe = {"$unwind": "$"+"result"}
                     if searchContext["aggregate"] == "count":
@@ -125,7 +125,7 @@ class XPathParser:
                     queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe, result_pipe])
                 # xpath with aggregate functions in predicate and not in final and not in outer
                 else:
-                    final_value = projection_value.split(".")[-1]
+                    # final_value = projection_value.split(".")[-1]
                     project_pipe = {"$project": {"result": "$"+projection_value}}
                     unwind_pipe = {"$unwind": "$"+"result"}
                     queryResult = self.db[searchContext["collection"]].aggregate([add_field_pipe, match_pipe, project_pipe, unwind_pipe])
@@ -519,7 +519,7 @@ class XPathParser:
             else:
                 filters.update({'$or': res})
 
-        return (filters, filterGrain)
+        return filters, filterGrain
 
     # find the root element in a sample document down the "path"
     def nodeInSchema(self, path):
@@ -799,7 +799,7 @@ if __name__ == "__main__":
         "/child::library/descendant::song[descendant::title=\"Payam Island\"]/child::duration",  # 8
         "/child::library/descendant::song[parent::songs/descendant::title=\"Payam Island\"]/child::duration",  # 9
         "/child::library/descendant::country[ancestor::artists/child::artist/child::name=\"Anang Ashanty\"]",  # 10
-        "/child::library/child::songs[descendant::title=\"Payam Island\"]/descendant::title" # 11
+        "/child::library/child::songs[descendant::title=\"Payam Island\"]/descendant::title"  # 11
     ]
 
     # ------------------------- Test for aggregate ------------------------- #
@@ -846,7 +846,7 @@ if __name__ == "__main__":
 
     attributeTests = [
         "/child::library/child::artists[attribute::country=25]/descendant::country",  # 0
-        "/library/artists[@country=25]//country" # 1
+        "/library/artists[@country=25]//country"  # 1
     ]
 
     # test method 1: run a whole test set
