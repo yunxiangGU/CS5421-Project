@@ -14,8 +14,8 @@ The project is a XPath compiler which take a XPath query as input, translate it 
 ### Option 1: install the package and use the handler
 1. install our latest version of package with  
 ```pip install XPathMongoCompiler```;
-2. import pymongo for underlying support for the  compiler:  
-```import pymongo```;
+2. install pymongo for underlying support for the  compiler:  
+```pip install pymongo```;
 3. import the compiler handler from the package:  
 ```from XPathMongoCompiler import XPathParser```;
 4. The following codes serve as an example of processes from creating the compiler instance to conducting various kinds of queries:  
@@ -32,7 +32,7 @@ for result in testHandler.query("/child::library/descendant::artists[child::arti
     pprint(result)
 
 # sample query with predicate and aggregate functions
-# please note that if the query contains aggregate function(s), please use result['result'] in the for loop as show below to get the result
+# please note that if the query contains aggregate function(s), please use result['result'] in the for loop as shown below to get the result
 for result in testHandler.query("max(/child::library/descendant::artists[count(child::artist)>0]/sum(child::artist/child::age))", withID=False):
     pprint(result['result'])
     
@@ -45,9 +45,12 @@ for result in testHandler.query("/library//artist[name='Job Bunjob Pholin']/name
 
 # change the database manually
 textHandler.setDatabase("test")
+
 # update the document schema manually (this function would be called automatically for the first query on a collection or upon any change of collection)
 textHandler.updateSchema("library")
 ```
+5. To verify the correctness of the results, just run the same query above directly in eXistDB and check the results.
+
 ### Option 2: run tests provide in source code
 As an alternative, you can also run the "package/src/XPathMongoCompiler/compiler.py" script directly. We have provided several test sets that focus on different aspects of our design, and you can modify the code at the bottom of the file to run a whole test set or check a single query in a test set:
 ```
