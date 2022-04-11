@@ -23,13 +23,23 @@ The project is a XPath compiler which take a XPath query as input, translate it 
 # create a compiler instance specifying the location of MongoDB and the database name
 testHandler = XPathParser("mongodb://localhost:27017/", "test")
 
-# sample query with predicate
-for result in testHandler.query("/child::library[child::year>1990]", withID=False):
+# sample simple query with only axes
+for result in testHandler.query("/child::library/descendant::artist/ancestor", withID=False):
     pprint(result)
 
-# sample query with aggregation function
-for result in testHandler.query("/child::library[child::year>1990]", withID=False):
+# sample query with predicate
+for result in testHandler.query("/child::library/descendant::artists[child::artist/child::name="Wham!" or child::artist/child::name="Anang Ashanty"]", withID=False):
+    pprint(result)
+
+# sample query with predicate and aggregate functions
+# please note that if the query contains aggregate function(s), please use result['result'] in the for loop as show below to get the result
+for result in testHandler.query("max(/child::library/descendant::artists[count(child::artist)>0]/sum(child::artist/child::age))", withID=False):
     pprint(result['result'])
+    
+# sample simple query with shorthand syntax
+for result in testHandler.query("/library//artist[name='Job Bunjob Pholin']/name", withID=False):
+    pprint(result)
+
 
 # other useful functions
 
